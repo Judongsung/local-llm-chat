@@ -1,0 +1,35 @@
+{
+  "name": "local-llm-chat",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env server/index.ts --dev",
+    "build": "tsc --noEmit && vite build",
+    "start": "node --env-file=.env server/index.ts",
+    "test": "npm run test:server && npm run test:client",
+    "test:server": "node --test server/loadServerConfig.test.ts server/chat/persistence/JsonChatRepository.test.ts server/llm/openAiCompletionStreamer.test.ts server/http/createApp.test.ts",
+    "test:client": "vitest run"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "katex": "^0.17.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.3",
+    "jsdom": "^27.0.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7",
+    "vitest": "^3.2.4"
+  }
+}

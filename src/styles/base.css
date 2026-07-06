@@ -1,0 +1,98 @@
+:root {
+  color: #e8eaf0;
+  background: #101217;
+  font-family:
+    Inter, Pretendard, "Noto Sans KR", system-ui, -apple-system, sans-serif;
+  font-synthesis: none;
+  --panel: #171a21;
+  --panel-strong: #1f232d;
+  --line: #303642;
+  --muted: #9aa3b2;
+  --accent: #7c9cff;
+  --accent-strong: #5d7ee8;
+  --danger: #ff8181;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.65rem 0.9rem;
+  color: white;
+  background: var(--accent-strong);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  color: inherit;
+  background: #101319;
+}
+
+textarea {
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #1d2430;
+    background: #f7f8fb;
+    --panel: #ffffff;
+    --panel-strong: #f0f3f9;
+    --line: #d9deea;
+    --muted: #657084;
+    --accent: #365fd8;
+    --accent-strong: #365fd8;
+    --danger: #b32828;
+  }
+
+  input,
+  textarea {
+    background: #f7f8fb;
+  }
+}

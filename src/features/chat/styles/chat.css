@@ -1,0 +1,237 @@
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 1.25rem;
+  color: #ffd3d3;
+  background: #582828;
+}
+
+.error-banner button {
+  padding: 0.2rem 0.45rem;
+  background: transparent;
+}
+
+.messages {
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 1.5rem max(1rem, calc((100% - 860px) / 2));
+}
+
+.message {
+  width: fit-content;
+  max-width: min(78%, 760px);
+  margin-bottom: 1.15rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.message.user {
+  margin-left: auto;
+  border-color: #415a99;
+  background: #23345e;
+}
+
+.message.assistant {
+  width: 100%;
+  max-width: 760px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.message-meta span {
+  color: var(--danger);
+}
+
+.message-actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.message-actions button {
+  padding: 0.2rem 0.4rem;
+  color: var(--muted);
+  background: transparent;
+}
+
+.message-content {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.message.user .message-content {
+  white-space: pre-wrap;
+}
+
+.message-reasoning {
+  margin-bottom: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.message-reasoning summary {
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+.message-reasoning-content {
+  padding: 0 0.75rem 0.75rem;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.message.assistant .message-content > :first-child {
+  margin-top: 0;
+}
+
+.message.assistant .message-content > :last-child {
+  margin-bottom: 0;
+}
+
+.message.assistant pre {
+  overflow-x: auto;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.message.assistant code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.message.assistant :not(pre) > code {
+  padding: 0.15rem 0.3rem;
+  border-radius: 4px;
+  background: var(--panel-strong);
+}
+
+.message.assistant blockquote {
+  margin-inline: 0;
+  padding-left: 1rem;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+
+.message.assistant a {
+  color: var(--accent);
+}
+
+.message.editing {
+  width: min(90%, 760px);
+}
+
+.message-edit textarea {
+  min-height: 110px;
+}
+
+.message-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.message-edit-actions button {
+  padding: 0.45rem 0.7rem;
+}
+
+.message-edit-actions button:last-child {
+  color: inherit;
+  border-color: var(--line);
+  background: transparent;
+}
+
+.empty-state {
+  display: grid;
+  place-content: center;
+  min-height: 100%;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-state strong {
+  margin-bottom: 0.45rem;
+  color: inherit;
+  font-size: 1.15rem;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  padding: 1rem max(1rem, calc((100% - 860px) / 2));
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.composer textarea {
+  max-height: 180px;
+}
+
+.composer button {
+  min-width: 76px;
+  min-height: 44px;
+}
+
+.stop-button {
+  background: #9b3d3d;
+}
+
+@media (prefers-color-scheme: light) {
+  .message.user {
+    border-color: #b9c9f5;
+    background: #dce6ff;
+  }
+
+  .error-banner {
+    color: #751f1f;
+    background: #ffe0e0;
+  }
+}
+
+@media (max-width: 760px) {
+  .message {
+    max-width: 90%;
+  }
+
+  .message.editing {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .messages {
+    padding: 1rem 0.75rem;
+  }
+
+  .composer {
+    gap: 0.5rem;
+    padding: 0.75rem;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .composer textarea {
+    min-height: 52px;
+    max-height: 130px;
+  }
+}
