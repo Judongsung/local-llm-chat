@@ -1,0 +1,96 @@
+# Local LLM Chat
+
+OpenAI 호환 API를 로컬 서버에서 호출하는 단일 사용자용 채팅
+애플리케이션입니다. API 키와 채팅 데이터는 브라우저가 아닌 로컬
+파일에만 저장됩니다.
+
+## 주요 기능
+
+- 여러 API URL과 모델을 등록하고 채팅·프로필별로 선택
+- 파라미터 프로필과 채팅별 오버라이드 저장
+- 채팅방별 JSON 파일 저장
+- 스트리밍 응답과 중단 처리
+- Markdown, 코드 블록, KaTeX 수식 렌더링
+- 추론 내용 별도 저장 및 접이식 UI 표시
+- PC와 모바일 레이아웃 지원
+
+## 기술 스택
+
+| 영역 | 기술 |
+| --- | --- |
+| 런타임 | Node.js 24 이상, TypeScript 5.9 |
+| 프론트엔드 | React 19, React DOM 19 |
+| 서버 | Express 5 |
+| 개발·빌드 | Vite 7 |
+| Markdown·수식 | react-markdown 10, remark-math 6, rehype-katex 7, KaTeX 0.17 |
+| 테스트 | Node.js Test Runner, Vitest 3, Testing Library 16, jsdom 27 |
+
+## 설치 및 설정
+
+```powershell
+npm install
+Copy-Item .env.example .env
+Copy-Item llm-models.example.json llm-models.json
+```
+
+`llm-models.json`에 사용할 모델을 등록합니다.
+
+```json
+[
+  {
+    "apiKey": "your-api-key",
+    "baseUrl": "https://api.openai.com/v1",
+    "model": "gpt-4.1-mini"
+  }
+]
+```
+
+- `model` 값은 배열 안에서 중복될 수 없습니다.
+- 첫 번째 항목이 새 프로필의 기본 모델입니다.
+- 파일 변경은 서버를 다시 시작한 뒤 반영됩니다.
+- `llm-models.json`은 Git에서 제외되며 브라우저로 전달되지 않습니다.
+
+`.env`에서는 서버 주소와 포트만 설정합니다.
+
+```dotenv
+HOST=0.0.0.0
+PORT=3000
+```
+
+PC에서만 접속하려면 `HOST=127.0.0.1`로 제한할 수 있습니다.
+
+## 실행
+
+개발 서버:
+
+```powershell
+npm run dev
+```
+
+PC에서는 `http://127.0.0.1:3000`을 사용합니다. 같은 내부망의 모바일
+기기에서는 PC의 IPv4 주소와 포트로 접속합니다.
+
+프로덕션:
+
+```powershell
+npm run build
+npm start
+```
+
+## 데이터 저장
+
+- `data/profiles.json`: 전역 파라미터 프로필
+- `data/chats/<채팅 ID>.json`: 채팅별 메시지, 프로필 ID, 오버라이드
+- `llm-models.json`: 서버 전용 API 키, API URL, 모델 목록
+
+채팅 파일은 프로필 기본값과 다른 파라미터만 오버라이드로 저장합니다.
+추론 내용은 채팅 파일에 보존되지만 후속 모델 요청 이력에는 포함하지
+않습니다.
+
+## 검증
+
+```powershell
+npm test
+npm run build
+```
+"# local-llm-chat" 
