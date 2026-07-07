@@ -4,6 +4,7 @@ import type {
   ChatParameters,
   ChatSettings,
   ChatSummary,
+  ImageAttachment,
   MessageStatus,
   ParameterProfile,
   ProfileCatalog,
@@ -42,6 +43,7 @@ export function useChatController() {
   });
   const [chat, setChat] = useState<Chat | null>(null);
   const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -223,13 +225,15 @@ export function useChatController() {
 
   async function sendMessage() {
     const content = draft;
-    if (!chat || busy || !content.trim()) return;
+    const images = attachments;
+    if (!chat || busy || (!content.trim() && images.length === 0)) return;
 
     const chatId = chat.id;
     const controller = new AbortController();
     abortRef.current = controller;
     setBusy(true);
     setDraft("");
+    setAttachments([]);
     setError("");
 
     let userId = "";
@@ -241,6 +245,7 @@ export function useChatController() {
       await streamMessage(
         chatId,
         content,
+        images,
         controller.signal,
         (streamEvent) => {
           if (streamEvent.type === "start") {
@@ -250,6 +255,7 @@ export function useChatController() {
               appendPendingTurn(
                 current,
                 content,
+                images,
                 userId,
                 assistantId,
                 new Date().toISOString(),
@@ -284,6 +290,7 @@ export function useChatController() {
               userId,
               assistantId,
               content,
+              images,
               received,
               receivedReasoning,
             );
@@ -303,6 +310,7 @@ export function useChatController() {
       } else {
         removePending(chatId, userId, assistantId);
         setDraft(content);
+        setAttachments(images);
       }
       if (!stopped) showError(cause);
     } finally {
@@ -318,6 +326,7 @@ export function useChatController() {
     userId: string,
     assistantId: string,
     content: string,
+    attachments: ImageAttachment[],
     received: string,
     receivedReasoning: string,
   ) {
@@ -333,6 +342,7 @@ export function useChatController() {
     } else {
       removePending(chatId, userId, assistantId);
       setDraft(content);
+      setAttachments(attachments);
     }
   }
 
@@ -378,10 +388,12 @@ export function useChatController() {
     profileCatalog,
     chat,
     draft,
+    attachments,
     busy,
     error,
     sidebarOpen,
     setDraft,
+    setAttachments,
     setSidebarOpen,
     clearError: () => setError(""),
     openChat,

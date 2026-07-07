@@ -29,6 +29,7 @@ describe("chatState", () => {
     const pending = appendPendingTurn(
       chat,
       "질문",
+      [],
       "user-1",
       "assistant-1",
       chat.createdAt,
@@ -51,6 +52,7 @@ describe("chatState", () => {
     const pending = appendPendingTurn(
       chat,
       "질문",
+      [],
       "user-1",
       "assistant-1",
       chat.createdAt,

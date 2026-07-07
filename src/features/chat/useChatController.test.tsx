@@ -133,7 +133,7 @@ describe("useChatController", () => {
     vi.mocked(api.listChats).mockResolvedValue([summary(chatOne)]);
     vi.mocked(api.getChat).mockResolvedValue(chatOne);
     vi.mocked(api.streamMessage).mockImplementation(
-      async (_id, _content, _signal, onEvent) => {
+      async (_id, _content, _attachments, _signal, onEvent) => {
         onEvent({
           type: "start",
           userMessageId: "user-1",
@@ -162,7 +162,7 @@ describe("useChatController", () => {
     vi.mocked(api.listChats).mockResolvedValue([summary(chatOne)]);
     vi.mocked(api.getChat).mockResolvedValue(chatOne);
     vi.mocked(api.streamMessage).mockImplementation(
-      async (_id, _content, _signal, onEvent) => {
+      async (_id, _content, _attachments, _signal, onEvent) => {
         onEvent({
           type: "start",
           userMessageId: "user-1",

@@ -139,13 +139,36 @@ export function MessageList({ chat, busy, onEdit, onDelete }: Props) {
                   <MarkdownContent>{message.content}</MarkdownContent>
                 </>
               ) : (
-                message.content
+                <>
+                  {message.attachments && (
+                    <ImageAttachments attachments={message.attachments} />
+                  )}
+                  {message.content}
+                </>
               )}
             </div>
           )}
         </article>
       ))}
     </section>
+  );
+}
+
+function ImageAttachments({
+  attachments,
+}: {
+  attachments: NonNullable<Chat["messages"][number]["attachments"]>;
+}) {
+  return (
+    <div className="message-attachments">
+      {attachments.map((attachment) => (
+        <img
+          key={attachment.id}
+          src={attachment.dataUrl}
+          alt={attachment.name}
+        />
+      ))}
+    </div>
   );
 }
 

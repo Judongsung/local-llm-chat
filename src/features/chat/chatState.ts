@@ -1,12 +1,14 @@
 import type {
   Chat,
   ChatSummary,
+  ImageAttachment,
   MessageStatus,
 } from "../../../shared/types/chat.ts";
 
 export function appendPendingTurn(
   chat: Chat,
   content: string,
+  attachments: ImageAttachment[],
   userId: string,
   assistantId: string,
   createdAt: string,
@@ -19,6 +21,7 @@ export function appendPendingTurn(
         id: userId,
         role: "user",
         content,
+        ...(attachments.length ? { attachments } : {}),
         createdAt,
         status: "complete",
       },

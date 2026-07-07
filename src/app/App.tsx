@@ -78,9 +78,11 @@ export default function App() {
           />
           <MessageComposer
             draft={controller.draft}
+            attachments={controller.attachments}
             disabled={!controller.chat}
             busy={controller.busy}
             onDraftChange={controller.setDraft}
+            onAttachmentsChange={controller.setAttachments}
             onSend={controller.sendMessage}
             onStop={controller.stopMessage}
           />

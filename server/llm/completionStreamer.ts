@@ -1,11 +1,13 @@
 import type {
   ChatSettings,
+  ImageAttachment,
   Message,
 } from "../../shared/types/chat.ts";
 
 export type CompletionInput = {
   history: Message[];
   prompt: string;
+  attachments: ImageAttachment[];
   settings: ChatSettings;
 };
 

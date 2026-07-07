@@ -3,6 +3,7 @@ import type {
   ChatParameters,
   ChatSettings,
   ChatSummary,
+  ImageAttachment,
   ParameterProfile,
   ProfileCatalog,
   StreamEvent,
@@ -116,13 +117,14 @@ export const deleteTurn = (chatId: string, messageId: string) =>
 export async function streamMessage(
   id: string,
   content: string,
+  attachments: ImageAttachment[],
   signal: AbortSignal,
   onEvent: (event: StreamEvent) => void,
 ) {
   const response = await fetch(`${API_PATHS.chats}/${id}/messages`, {
     method: HTTP_METHODS.create,
     headers: JSON_HEADERS,
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, attachments }),
     signal,
   });
   if (!response.ok) {

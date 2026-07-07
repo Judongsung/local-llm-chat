@@ -8,12 +8,23 @@ import {
   JSON_HEADERS,
   SSE,
 } from "../../shared/constants/http.ts";
+import type {
+  ImageAttachment,
+  Message,
+} from "../../shared/types/chat.ts";
 import type { LlmModelConfig } from "../../shared/types/llm.ts";
 
 const CHAT_COMPLETIONS_PATH = "/chat/completions";
 const AUTHORIZATION_SCHEME = "Bearer";
 const SSE_DONE_EVENT = "[DONE]";
 const TRAILING_SLASHES = /\/+$/;
+
+type OpenAiMessageContent =
+  | string
+  | Array<
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string } }
+  >;
 
 export function createOpenAiCompletionStreamer(
   configs: LlmModelConfig[],
@@ -36,8 +47,11 @@ export async function* streamOpenAiCompletion(
     ...(input.settings.systemPrompt.trim()
       ? [{ role: "system", content: input.settings.systemPrompt }]
       : []),
-    ...input.history.map(({ role, content }) => ({ role, content })),
-    { role: "user", content: input.prompt },
+    ...input.history.map(toOpenAiMessage),
+    {
+      role: "user",
+      content: toOpenAiContent(input.prompt, input.attachments),
+    },
   ];
 
   const response = await fetchImpl(
@@ -93,6 +107,30 @@ export async function* streamOpenAiCompletion(
       for (const chunk of chunks) yield chunk;
     }
   }
+}
+
+function toOpenAiMessage({ role, content }: Message): {
+  role: Message["role"];
+  content: OpenAiMessageContent;
+} {
+  return {
+    role,
+    content,
+  };
+}
+
+function toOpenAiContent(
+  text: string,
+  attachments: ImageAttachment[] = [],
+): OpenAiMessageContent {
+  if (attachments.length === 0) return text;
+  return [
+    ...(text.trim() ? [{ type: "text" as const, text }] : []),
+    ...attachments.map((attachment) => ({
+      type: "image_url" as const,
+      image_url: { url: attachment.dataUrl },
+    })),
+  ];
 }
 
 function parseEvent(event: string): CompletionChunk[] | null {

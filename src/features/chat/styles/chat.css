@@ -78,6 +78,23 @@
   white-space: pre-wrap;
 }
 
+.message-attachments,
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+}
+
+.message-attachments img,
+.composer-attachment img {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
 .message-reasoning {
   margin-bottom: 0.8rem;
   border: 1px solid var(--line);
@@ -187,6 +204,36 @@
 
 .composer textarea {
   max-height: 180px;
+}
+
+.composer-input {
+  min-width: 0;
+}
+
+.composer-attachment {
+  position: relative;
+}
+
+.composer-attachment button {
+  position: absolute;
+  right: 0.25rem;
+  bottom: 0.25rem;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.75rem;
+}
+
+.image-picker {
+  display: inline-block;
+  margin-top: 0.45rem;
+  color: var(--accent);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.image-picker input {
+  display: none;
 }
 
 .composer button {

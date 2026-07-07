@@ -11,6 +11,7 @@ import type {
 } from "../../shared/types/chat.ts";
 import type { CompletionStreamer } from "../llm/completionStreamer.ts";
 import type { ChatRepository } from "./chatRepository.ts";
+import type { MessageInput } from "./chatValidation.ts";
 
 export class ChatNotFoundError extends Error {}
 export class ChatBusyError extends Error {}
@@ -132,7 +133,7 @@ export class ChatService {
 
   streamMessage(
     chatId: string,
-    prompt: string,
+    input: MessageInput,
     signal: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
     const chat = this.repository.get(chatId);
@@ -141,12 +142,12 @@ export class ChatService {
       throw new ChatBusyError("이미 응답을 생성하고 있습니다.");
     }
     this.activeChats.add(chatId);
-    return this.generate(chat, prompt, signal);
+    return this.generate(chat, input, signal);
   }
 
   private async *generate(
     chat: Chat,
-    prompt: string,
+    input: MessageInput,
     signal: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
     const chatId = chat.id;
@@ -154,7 +155,8 @@ export class ChatService {
     const user: Message = {
       id: randomUUID(),
       role: "user",
-      content: prompt,
+      content: input.content,
+      ...(input.attachments.length ? { attachments: input.attachments } : {}),
       createdAt: now,
       status: "complete",
     };
@@ -174,7 +176,12 @@ export class ChatService {
 
     try {
       for await (const delta of this.completionStreamer(
-        { history: chat.messages, prompt, settings: chat.settings },
+        {
+          history: chat.messages,
+          prompt: input.content,
+          attachments: input.attachments,
+          settings: chat.settings,
+        },
         signal,
       )) {
         if (delta.type === "reasoning") {

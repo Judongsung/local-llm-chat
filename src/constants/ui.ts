@@ -1,4 +1,5 @@
 import type { ChatSettings } from "../../shared/types/chat.ts";
+import { SERVER_PATHS } from "../../shared/constants/server.ts";
 
 export const UI_LOCALE = "ko-KR";
 
@@ -62,8 +63,7 @@ export const UI_TEXT = {
   messages: {
     deleteConfirm: "이 프롬프트와 응답을 삭제할까요?",
     emptyTitle: "새 대화를 시작하세요.",
-    emptyDescription:
-      "API 키는 서버의 llm-models.json 파일에서만 사용됩니다.",
+    emptyDescription: `API 키는 서버의 ${SERVER_PATHS.modelCatalog} 파일에서만 사용됩니다.`,
     user: "나",
     assistant: "AI",
     stopped: "중단됨",
@@ -78,6 +78,9 @@ export const UI_TEXT = {
   composer: {
     placeholder: "메시지를 입력하세요.",
     message: "메시지",
+    attachImage: "이미지",
+    removeImage: "이미지 제거",
+    imageRejected: "지원하지 않는 이미지이거나 압축 후에도 크기 제한을 초과했습니다.",
     stop: "중단",
     send: "보내기",
   },

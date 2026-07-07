@@ -2,12 +2,14 @@ import type {
   Chat,
   ChatSettings,
   ChatSettingsOverrides,
+  ImageAttachment,
   Message,
   ParameterProfile,
   ProfileCatalog,
 } from "../../../shared/types/chat.ts";
 import {
   CHAT_LIMITS,
+  IMAGE_MIME_TYPES,
   STORE_VERSION,
 } from "../../../shared/constants/chat.ts";
 
@@ -177,10 +179,32 @@ function isMessage(value: unknown): value is Message {
     isString(value.id) &&
     (value.role === "user" || value.role === "assistant") &&
     isString(value.content) &&
+    (value.attachments === undefined ||
+      (Array.isArray(value.attachments) &&
+        value.attachments.every(isImageAttachment))) &&
     (value.reasoning === undefined || isString(value.reasoning)) &&
     isString(value.createdAt) &&
     (value.status === "complete" ||
       value.status === "stopped" ||
       value.status === "error")
+  );
+}
+
+function isImageAttachment(value: unknown): value is ImageAttachment {
+  return (
+    isRecord(value) &&
+    isString(value.id) &&
+    Boolean(value.id.trim()) &&
+    isString(value.name) &&
+    Boolean(value.name.trim()) &&
+    value.name.length <= CHAT_LIMITS.attachments.name &&
+    isString(value.mimeType) &&
+    IMAGE_MIME_TYPES.some((mimeType) => mimeType === value.mimeType) &&
+    isString(value.dataUrl) &&
+    value.dataUrl.startsWith(`data:${value.mimeType};base64,`) &&
+    isFiniteNumber(value.size) &&
+    Number.isInteger(value.size) &&
+    value.size > 0 &&
+    value.size <= CHAT_LIMITS.attachments.bytes
   );
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MessageComposer } from "./MessageComposer.tsx";
+import type { ImageAttachment } from "../../../../shared/types/chat.ts";
 
 afterEach(cleanup);
 
@@ -14,9 +15,11 @@ describe("MessageComposer", () => {
       return (
         <MessageComposer
           draft={draft}
+          attachments={[]}
           disabled={false}
           busy={false}
           onDraftChange={setDraft}
+          onAttachmentsChange={() => undefined}
           onSend={onSend}
           onStop={() => undefined}
         />
@@ -30,6 +33,33 @@ describe("MessageComposer", () => {
 
     expect(onSend).not.toHaveBeenCalled();
     expect((textarea as HTMLTextAreaElement).value).toBe("첫 줄\n둘째 줄");
+
+    fireEvent.click(getByRole("button", { name: "보내기" }));
+    expect(onSend).toHaveBeenCalledOnce();
+  });
+
+  it("이미지만 있어도 전송할 수 있다", () => {
+    const onSend = vi.fn();
+    const attachment: ImageAttachment = {
+      id: "image-1",
+      name: "test.png",
+      mimeType: "image/png",
+      dataUrl: "data:image/png;base64,aGVsbG8=",
+      size: 5,
+    };
+
+    const { getByRole } = render(
+      <MessageComposer
+        draft=""
+        attachments={[attachment]}
+        disabled={false}
+        busy={false}
+        onDraftChange={() => undefined}
+        onAttachmentsChange={() => undefined}
+        onSend={onSend}
+        onStop={() => undefined}
+      />,
+    );
 
     fireEvent.click(getByRole("button", { name: "보내기" }));
     expect(onSend).toHaveBeenCalledOnce();

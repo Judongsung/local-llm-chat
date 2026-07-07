@@ -8,7 +8,7 @@ import {
 } from "../chat/chatService.ts";
 import { HTTP_STATUS } from "../../shared/constants/http.ts";
 
-const JSON_BODY_LIMIT = "256kb";
+const JSON_BODY_LIMIT = "30mb";
 const ERROR_MESSAGES = {
   unknownApiPath: "API 경로를 찾을 수 없습니다.",
   internalServer: "서버 오류가 발생했습니다.",

@@ -9,6 +9,7 @@ import { ChatService } from "./chatService.ts";
 import {
   parseChatParameters,
   parseChatSettings,
+  parseMessageInput,
   parseProfileName,
   parsePrompt,
 } from "./chatValidation.ts";
@@ -30,7 +31,7 @@ const ERROR_MESSAGES = {
   invalidProfile: "프로필 이름이나 파라미터 값이 올바르지 않습니다.",
   invalidProfileId: "프로필 ID가 올바르지 않습니다.",
   invalidParameters: "파라미터 값이 올바르지 않습니다.",
-  invalidMessage: "메시지는 1자 이상 100,000자 이하여야 합니다.",
+  invalidMessage: "메시지나 이미지 첨부가 올바르지 않습니다.",
 } as const;
 const SSE_HEADERS = {
   "Content-Type": CONTENT_TYPES.eventStream,
@@ -155,8 +156,8 @@ export function createChatRouter(service: ChatService, models: string[]) {
   );
 
   router.post(ROUTES.messages, async (request, response) => {
-    const prompt = parsePrompt(request.body?.content);
-    if (!prompt) {
+    const message = parseMessageInput(request.body);
+    if (!message) {
       return response.status(HTTP_STATUS.badRequest).json({
         error: ERROR_MESSAGES.invalidMessage,
       });
@@ -165,7 +166,7 @@ export function createChatRouter(service: ChatService, models: string[]) {
     const abortController = new AbortController();
     const events = service.streamMessage(
       request.params.id,
-      prompt,
+      message,
       abortController.signal,
     );
 

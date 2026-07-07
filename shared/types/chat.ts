@@ -1,10 +1,19 @@
 export type MessageStatus = "complete" | "stopped" | "error";
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
+export type ImageAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+  size: number;
+};
+
 export type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: ImageAttachment[];
   reasoning?: string;
   createdAt: string;
   status: MessageStatus;
