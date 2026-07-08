@@ -8,6 +8,7 @@ import {
   JSON_HEADERS,
   SSE,
 } from "../../shared/constants/http.ts";
+import { SERVER_ERROR_MESSAGES } from "../../shared/constants/server.ts";
 import type {
   ImageAttachment,
   Message,
@@ -32,7 +33,7 @@ export function createOpenAiCompletionStreamer(
 ): CompletionStreamer {
   return (input, signal) => {
     const config = configs.find(({ model }) => model === input.settings.model);
-    if (!config) throw new Error("선택한 모델 설정을 찾을 수 없습니다.");
+    if (!config) throw new Error(SERVER_ERROR_MESSAGES.missingModelConfig);
     return streamOpenAiCompletion(input, config, signal, fetchImpl);
   };
 }
@@ -80,7 +81,7 @@ export async function* streamOpenAiCompletion(
   if (!response.ok) {
     throw new Error(`LLM API 요청 실패 (${response.status})`);
   }
-  if (!response.body) throw new Error("LLM API 응답 본문이 없습니다.");
+  if (!response.body) throw new Error(SERVER_ERROR_MESSAGES.missingResponseBody);
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -146,7 +147,7 @@ function parseEvent(event: string): CompletionChunk[] | null {
   try {
     parsed = JSON.parse(data);
   } catch {
-    throw new Error("LLM API 스트림 형식이 올바르지 않습니다.");
+    throw new Error(SERVER_ERROR_MESSAGES.invalidStream);
   }
   if (!isRecord(parsed) || !Array.isArray(parsed.choices)) return [];
   const choice = parsed.choices[0];

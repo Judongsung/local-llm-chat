@@ -7,23 +7,23 @@ import {
   ProfileConflictError,
 } from "../chat/chatService.ts";
 import { HTTP_STATUS } from "../../shared/constants/http.ts";
-
-const JSON_BODY_LIMIT = "30mb";
-const ERROR_MESSAGES = {
-  unknownApiPath: "API 경로를 찾을 수 없습니다.",
-  internalServer: "서버 오류가 발생했습니다.",
-} as const;
+import {
+  SERVER_ERROR_MESSAGES,
+  SERVER_EXPRESS_SETTINGS,
+  SERVER_LIMITS,
+} from "../../shared/constants/server.ts";
 
 export function createApi(service: ChatService, models: string[]) {
   const app = express();
 
-  app.use(express.json({ limit: JSON_BODY_LIMIT }));
+  app.disable(SERVER_EXPRESS_SETTINGS.poweredBy);
+  app.use(express.json({ limit: SERVER_LIMITS.jsonBody }));
   app.use(createChatRouter(service, models));
 
   app.use(API_ROOT, (_request, response) => {
     response
       .status(HTTP_STATUS.notFound)
-      .json({ error: ERROR_MESSAGES.unknownApiPath });
+      .json({ error: SERVER_ERROR_MESSAGES.unknownApiPath });
   });
 
   app.use(
@@ -33,6 +33,16 @@ export function createApi(service: ChatService, models: string[]) {
       response: express.Response,
       _next: express.NextFunction,
     ) => {
+      if (isHttpErrorStatus(error, HTTP_STATUS.payloadTooLarge)) {
+        return response
+          .status(HTTP_STATUS.payloadTooLarge)
+          .json({ error: SERVER_ERROR_MESSAGES.requestTooLarge });
+      }
+      if (isHttpErrorStatus(error, HTTP_STATUS.badRequest)) {
+        return response
+          .status(HTTP_STATUS.badRequest)
+          .json({ error: SERVER_ERROR_MESSAGES.invalidJson });
+      }
       if (error instanceof ChatNotFoundError) {
         return response
           .status(HTTP_STATUS.notFound)
@@ -49,9 +59,18 @@ export function createApi(service: ChatService, models: string[]) {
       console.error(error);
       response
         .status(HTTP_STATUS.internalServerError)
-        .json({ error: ERROR_MESSAGES.internalServer });
+        .json({ error: SERVER_ERROR_MESSAGES.internalServer });
     },
   );
 
   return app;
+}
+
+function isHttpErrorStatus(error: unknown, status: number) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as { status?: unknown }).status === status
+  );
 }

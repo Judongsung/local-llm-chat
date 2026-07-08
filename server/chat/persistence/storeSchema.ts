@@ -12,6 +12,7 @@ import {
   IMAGE_MIME_TYPES,
   STORE_VERSION,
 } from "../../../shared/constants/chat.ts";
+import { SERVER_ERROR_MESSAGES } from "../../../shared/constants/server.ts";
 
 export type StoredChat = Omit<Chat, "settings"> & {
   settingsOverrides: ChatSettingsOverrides;
@@ -32,7 +33,7 @@ export function parseProfileStore(value: unknown): ProfileStore {
     value.profiles.length === 0 ||
     !value.profiles.every(isProfile)
   ) {
-    throw new Error("프로필 저장 파일 형식이 올바르지 않습니다.");
+    throw new Error(SERVER_ERROR_MESSAGES.invalidProfileStore);
   }
 
   const profiles = value.profiles as ParameterProfile[];
@@ -45,7 +46,7 @@ export function parseProfileStore(value: unknown): ProfileStore {
     names.size !== profiles.length ||
     !ids.has(value.defaultProfileId)
   ) {
-    throw new Error("프로필 저장 파일에 중복되거나 잘못된 값이 있습니다.");
+    throw new Error(SERVER_ERROR_MESSAGES.invalidProfileStoreValues);
   }
   return {
     version: STORE_VERSION,
@@ -64,7 +65,7 @@ export function parseChatFile(
     !isStoredChat(value.chat) ||
     value.chat.id !== expectedId
   ) {
-    throw new Error("채팅 저장 파일 형식이 올바르지 않습니다.");
+    throw new Error(SERVER_ERROR_MESSAGES.invalidChatFile);
   }
   return copy(value.chat);
 }

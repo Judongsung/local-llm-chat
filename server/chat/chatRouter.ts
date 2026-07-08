@@ -1,10 +1,10 @@
 import { Router, type Response } from "express";
 import type { StreamEvent } from "../../shared/types/chat.ts";
 import {
-  CONTENT_TYPES,
   HTTP_STATUS,
   SSE,
 } from "../../shared/constants/http.ts";
+import { SERVER_ERROR_MESSAGES } from "../../shared/constants/server.ts";
 import { ChatService } from "./chatService.ts";
 import {
   parseChatParameters,
@@ -26,18 +26,6 @@ const ROUTES = {
   chat: `${API_ROOT}/chats/:id`,
   message: `${API_ROOT}/chats/:id/messages/:messageId`,
   messages: `${API_ROOT}/chats/:id/messages`,
-} as const;
-const ERROR_MESSAGES = {
-  invalidProfile: "프로필 이름이나 파라미터 값이 올바르지 않습니다.",
-  invalidProfileId: "프로필 ID가 올바르지 않습니다.",
-  invalidParameters: "파라미터 값이 올바르지 않습니다.",
-  invalidMessage: "메시지나 이미지 첨부가 올바르지 않습니다.",
-} as const;
-const SSE_HEADERS = {
-  "Content-Type": CONTENT_TYPES.eventStream,
-  "Cache-Control": "no-cache, no-transform",
-  Connection: "keep-alive",
-  "X-Accel-Buffering": "no",
 } as const;
 const RESPONSE_CLOSE_EVENT = "close";
 
@@ -66,7 +54,7 @@ export function createChatRouter(service: ChatService, models: string[]) {
     const settings = parseChatSettings(request.body);
     if (!name || !settings || !availableModels.has(settings.model)) {
       return response.status(HTTP_STATUS.badRequest).json({
-        error: ERROR_MESSAGES.invalidProfile,
+        error: SERVER_ERROR_MESSAGES.invalidProfile,
       });
     }
     response
@@ -79,7 +67,7 @@ export function createChatRouter(service: ChatService, models: string[]) {
     const settings = parseChatSettings(request.body);
     if (!name || !settings || !availableModels.has(settings.model)) {
       return response.status(HTTP_STATUS.badRequest).json({
-        error: ERROR_MESSAGES.invalidProfile,
+        error: SERVER_ERROR_MESSAGES.invalidProfile,
       });
     }
     response.json(
@@ -95,7 +83,7 @@ export function createChatRouter(service: ChatService, models: string[]) {
   router.put(ROUTES.chatProfile, async (request, response) => {
     if (typeof request.body?.profileId !== "string") {
       return response.status(HTTP_STATUS.badRequest).json({
-        error: ERROR_MESSAGES.invalidProfileId,
+        error: SERVER_ERROR_MESSAGES.invalidProfileId,
       });
     }
     response.json(
@@ -107,7 +95,7 @@ export function createChatRouter(service: ChatService, models: string[]) {
     const parameters = parseChatParameters(request.body);
     if (!parameters || !availableModels.has(parameters.model)) {
       return response.status(HTTP_STATUS.badRequest).json({
-        error: ERROR_MESSAGES.invalidParameters,
+        error: SERVER_ERROR_MESSAGES.invalidParameters,
       });
     }
     response.json(
@@ -130,7 +118,7 @@ export function createChatRouter(service: ChatService, models: string[]) {
       const content = parsePrompt(request.body?.content);
       if (!content) {
         return response.status(HTTP_STATUS.badRequest).json({
-          error: ERROR_MESSAGES.invalidMessage,
+          error: SERVER_ERROR_MESSAGES.invalidMessage,
         });
       }
       response.json(
@@ -159,7 +147,7 @@ export function createChatRouter(service: ChatService, models: string[]) {
     const message = parseMessageInput(request.body);
     if (!message) {
       return response.status(HTTP_STATUS.badRequest).json({
-        error: ERROR_MESSAGES.invalidMessage,
+        error: SERVER_ERROR_MESSAGES.invalidMessage,
       });
     }
 
@@ -171,7 +159,7 @@ export function createChatRouter(service: ChatService, models: string[]) {
     );
 
     response.status(HTTP_STATUS.ok);
-    response.set(SSE_HEADERS);
+    response.set(SSE.headers);
     response.flushHeaders();
 
     let responseFinished = false;

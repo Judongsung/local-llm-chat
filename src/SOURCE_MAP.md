@@ -25,8 +25,8 @@
 
 - `shared/types/` owns cross-module data contracts, including browser-server
   and private LLM configuration shapes.
-- `shared/constants/` owns HTTP, protocol, limit, and default values used across
-  multiple modules.
+- `shared/constants/` owns HTTP, protocol, limit, default, and server response
+  values used across multiple modules.
 
 ## Request Flow
 

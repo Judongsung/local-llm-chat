@@ -2,16 +2,12 @@ import type {
   ChatParameters,
   ChatSettings,
   ImageAttachment,
+  MessageInput,
 } from "../../shared/types/chat.ts";
 import {
   CHAT_LIMITS,
   IMAGE_MIME_TYPES,
 } from "../../shared/constants/chat.ts";
-
-export type MessageInput = {
-  content: string;
-  attachments: ImageAttachment[];
-};
 
 const IMAGE_DATA_URL_PATTERN = /^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/;
 

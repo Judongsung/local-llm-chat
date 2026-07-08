@@ -52,6 +52,7 @@ test("API는 채팅 생성부터 스트리밍 저장까지 처리한다", async 
   const createdResponse = await fetch(`${base}/api/chats`, { method: "POST" });
   const created = (await createdResponse.json()) as Chat;
   assert.equal(createdResponse.status, 201);
+  assert.equal(createdResponse.headers.get("x-powered-by"), null);
   assert.deepEqual(await (await fetch(`${base}/api/models`)).json(), [
     "test-model",
     "other-model",
@@ -59,6 +60,20 @@ test("API는 채팅 생성부터 스트리밍 저장까지 처리한다", async 
   const initialCatalog = await (
     await fetch(`${base}/api/profiles`)
   ).json();
+
+  const malformedJson = await fetch(`${base}/api/profiles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{",
+  });
+  assert.equal(malformedJson.status, 400);
+
+  const oversizedJson = await fetch(`${base}/api/chats/${created.id}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: "x".repeat(7 * 1024 * 1024) }),
+  });
+  assert.equal(oversizedJson.status, 413);
 
   const invalid = await fetch(`${base}/api/profiles`, {
     method: "POST",

@@ -9,6 +9,7 @@ import { JsonChatRepository } from "./chat/persistence/JsonChatRepository.ts";
 import { loadConfig } from "./loadServerConfig.ts";
 import { createApi } from "./http/createApp.ts";
 import { createOpenAiCompletionStreamer } from "./llm/openAiCompletionStreamer.ts";
+import { SERVER_STATIC_OPTIONS } from "../shared/constants/server.ts";
 
 const PARENT_DIRECTORY = "..";
 const DEVELOPMENT_FLAG = "--dev";
@@ -49,7 +50,7 @@ if (development) {
       `${BUILD_DIRECTORY} 폴더가 없습니다. 먼저 npm run build를 실행하세요.`,
     );
   }
-  app.use(express.static(output));
+  app.use(express.static(output, SERVER_STATIC_OPTIONS));
   app.use((_request, response) =>
     response.sendFile(join(output, INDEX_FILE)),
   );

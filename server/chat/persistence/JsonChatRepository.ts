@@ -24,6 +24,7 @@ import {
   DEFAULT_PROFILE_NAME,
   STORE_VERSION,
 } from "../../../shared/constants/chat.ts";
+import { SERVER_ERROR_MESSAGES } from "../../../shared/constants/server.ts";
 import type { ChatRepository } from "../chatRepository.ts";
 import {
   parseChatFile,
@@ -381,7 +382,7 @@ export class JsonChatRepository implements ChatRepository {
 
   private toChat(chat: StoredChat): Chat {
     const profile = this.profile(chat.profileId);
-    if (!profile) throw new Error("채팅 프로필을 찾을 수 없습니다.");
+    if (!profile) throw new Error(SERVER_ERROR_MESSAGES.profileNotFound);
     const { settingsOverrides: overrides, ...stored } = chat;
     return copy({
       ...stored,
@@ -434,7 +435,7 @@ function overridesFrom(
 }
 
 function assertSafeId(id: string) {
-  if (!SAFE_ID.test(id)) throw new Error("ID 형식이 올바르지 않습니다.");
+  if (!SAFE_ID.test(id)) throw new Error(SERVER_ERROR_MESSAGES.invalidId);
 }
 
 function titleFrom(content: string) {

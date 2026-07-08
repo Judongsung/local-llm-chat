@@ -12,6 +12,7 @@ export const HTTP_STATUS = {
   badRequest: 400,
   notFound: 404,
   conflict: 409,
+  payloadTooLarge: 413,
   internalServerError: 500,
 } as const;
 
@@ -29,4 +30,10 @@ export const SSE = {
   eventSuffix: "\n\n",
   blockSeparator: /\r?\n\r?\n/,
   lineSeparator: /\r?\n/,
+  headers: {
+    "Content-Type": CONTENT_TYPES.eventStream,
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  },
 } as const;

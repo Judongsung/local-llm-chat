@@ -9,6 +9,11 @@ export type ImageAttachment = {
   size: number;
 };
 
+export type MessageInput = {
+  content: string;
+  attachments: ImageAttachment[];
+};
+
 export type Message = {
   id: string;
   role: "user" | "assistant";

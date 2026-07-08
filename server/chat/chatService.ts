@@ -5,13 +5,14 @@ import type {
   ChatSettings,
   ChatSummary,
   Message,
+  MessageInput,
   ParameterProfile,
   ProfileCatalog,
   StreamEvent,
 } from "../../shared/types/chat.ts";
+import { SERVER_ERROR_MESSAGES } from "../../shared/constants/server.ts";
 import type { CompletionStreamer } from "../llm/completionStreamer.ts";
 import type { ChatRepository } from "./chatRepository.ts";
-import type { MessageInput } from "./chatValidation.ts";
 
 export class ChatNotFoundError extends Error {}
 export class ChatBusyError extends Error {}
@@ -40,7 +41,7 @@ export class ChatService {
 
   getChat(id: string): Chat {
     const chat = this.repository.get(id);
-    if (!chat) throw new ChatNotFoundError("대화를 찾을 수 없습니다.");
+    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
     return chat;
   }
 
@@ -63,30 +64,32 @@ export class ChatService {
   ): Promise<ParameterProfile> {
     this.ensureUniqueProfileName(name, id);
     const profile = await this.repository.updateProfile(id, name, settings);
-    if (!profile) throw new ChatNotFoundError("프로필을 찾을 수 없습니다.");
+    if (!profile) {
+      throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.profileNotFound);
+    }
     return profile;
   }
 
   async deleteProfile(id: string): Promise<void> {
     const catalog = this.repository.listProfiles();
     if (!catalog.profiles.some((profile) => profile.id === id)) {
-      throw new ChatNotFoundError("프로필을 찾을 수 없습니다.");
+      throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.profileNotFound);
     }
     if (catalog.profiles.length === 1) {
-      throw new ProfileConflictError("마지막 프로필은 삭제할 수 없습니다.");
+      throw new ProfileConflictError(SERVER_ERROR_MESSAGES.lastProfile);
     }
     await this.repository.deleteProfile(id);
   }
 
   async selectProfile(chatId: string, profileId: string): Promise<Chat> {
-    this.ensureIdle(chatId, "응답 생성 중에는 프로필을 변경할 수 없습니다.");
+    this.ensureIdle(chatId, SERVER_ERROR_MESSAGES.busyProfile);
     if (!this.repository.listProfiles().profiles.some(
       (profile) => profile.id === profileId,
     )) {
-      throw new ChatNotFoundError("프로필을 찾을 수 없습니다.");
+      throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.profileNotFound);
     }
     const chat = await this.repository.selectProfile(chatId, profileId);
-    if (!chat) throw new ChatNotFoundError("대화를 찾을 수 없습니다.");
+    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
     return chat;
   }
 
@@ -94,18 +97,18 @@ export class ChatService {
     chatId: string,
     parameters: ChatParameters,
   ): Promise<Chat> {
-    this.ensureIdle(chatId, "응답 생성 중에는 설정을 변경할 수 없습니다.");
+    this.ensureIdle(chatId, SERVER_ERROR_MESSAGES.busySettings);
     const chat = await this.repository.updateChatParameters(chatId, parameters);
-    if (!chat) throw new ChatNotFoundError("대화를 찾을 수 없습니다.");
+    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
     return chat;
   }
 
   async deleteChat(id: string): Promise<void> {
     if (this.activeChats.has(id)) {
-      throw new ChatBusyError("응답 생성 중에는 삭제할 수 없습니다.");
+      throw new ChatBusyError(SERVER_ERROR_MESSAGES.busyDelete);
     }
     if (!(await this.repository.delete(id))) {
-      throw new ChatNotFoundError("대화를 찾을 수 없습니다.");
+      throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
     }
   }
 
@@ -114,20 +117,20 @@ export class ChatService {
     messageId: string,
     content: string,
   ): Promise<Chat> {
-    this.ensureIdle(chatId, "응답 생성 중에는 수정할 수 없습니다.");
+    this.ensureIdle(chatId, SERVER_ERROR_MESSAGES.busyEdit);
     const chat = await this.repository.updateUserMessage(
       chatId,
       messageId,
       content,
     );
-    if (!chat) throw new ChatNotFoundError("메시지를 찾을 수 없습니다.");
+    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.messageNotFound);
     return chat;
   }
 
   async deleteTurn(chatId: string, messageId: string): Promise<Chat> {
-    this.ensureIdle(chatId, "응답 생성 중에는 삭제할 수 없습니다.");
+    this.ensureIdle(chatId, SERVER_ERROR_MESSAGES.busyDelete);
     const chat = await this.repository.deleteTurn(chatId, messageId);
-    if (!chat) throw new ChatNotFoundError("메시지를 찾을 수 없습니다.");
+    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.messageNotFound);
     return chat;
   }
 
@@ -137,9 +140,9 @@ export class ChatService {
     signal: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
     const chat = this.repository.get(chatId);
-    if (!chat) throw new ChatNotFoundError("대화를 찾을 수 없습니다.");
+    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
     if (this.activeChats.has(chatId)) {
-      throw new ChatBusyError("이미 응답을 생성하고 있습니다.");
+      throw new ChatBusyError(SERVER_ERROR_MESSAGES.busy);
     }
     this.activeChats.add(chatId);
     return this.generate(chat, input, signal);
@@ -193,11 +196,11 @@ export class ChatService {
         }
       }
       if (!assistant.content && !assistant.reasoning) {
-        throw new Error("LLM API가 빈 응답을 반환했습니다.");
+        throw new Error(SERVER_ERROR_MESSAGES.emptyLlmResponse);
       }
 
       const saved = await this.repository.appendTurn(chatId, user, assistant);
-      if (!saved) throw new ChatNotFoundError("대화가 삭제되었습니다.");
+      if (!saved) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatDeleted);
       yield { type: "done", chat: saved };
     } catch (error) {
       const aborted = signal.aborted;
@@ -214,7 +217,7 @@ export class ChatService {
       }
       yield {
         type: "error",
-        message: aborted ? "응답 생성을 중단했습니다." : safeMessage(error),
+        message: aborted ? SERVER_ERROR_MESSAGES.stopped : safeMessage(error),
         partialSaved,
       };
     } finally {
@@ -237,10 +240,10 @@ export class ChatService {
             profile.name.toLocaleLowerCase() === normalized,
         )
     ) {
-      throw new ProfileConflictError("같은 이름의 프로필이 이미 있습니다.");
+      throw new ProfileConflictError(SERVER_ERROR_MESSAGES.duplicateProfileName);
     }
   }
 }
 
 const safeMessage = (error: unknown) =>
-  error instanceof Error ? error.message : "LLM 요청에 실패했습니다.";
+  error instanceof Error ? error.message : SERVER_ERROR_MESSAGES.llmRequestFailed;
