@@ -5,6 +5,13 @@ export const HTTP_METHODS = {
   delete: "DELETE",
 } as const;
 
+export const API_ROOT = "/api";
+export const API_PATHS = {
+  chats: `${API_ROOT}/chats`,
+  models: `${API_ROOT}/models`,
+  profiles: `${API_ROOT}/profiles`,
+} as const;
+
 export const HTTP_STATUS = {
   ok: 200,
   created: 201,
@@ -21,8 +28,16 @@ export const CONTENT_TYPES = {
   eventStream: "text/event-stream; charset=utf-8",
 } as const;
 
+export const HTTP_HEADER = {
+  authorization: "Authorization",
+  contentType: "Content-Type",
+  cacheControl: "Cache-Control",
+  connection: "Connection",
+  acceleratorBuffering: "X-Accel-Buffering",
+} as const;
+
 export const JSON_HEADERS = {
-  "Content-Type": CONTENT_TYPES.json,
+  [HTTP_HEADER.contentType]: CONTENT_TYPES.json,
 } as const;
 
 export const SSE = {
@@ -31,9 +46,9 @@ export const SSE = {
   blockSeparator: /\r?\n\r?\n/,
   lineSeparator: /\r?\n/,
   headers: {
-    "Content-Type": CONTENT_TYPES.eventStream,
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
+    [HTTP_HEADER.contentType]: CONTENT_TYPES.eventStream,
+    [HTTP_HEADER.cacheControl]: "no-cache, no-transform",
+    [HTTP_HEADER.connection]: "keep-alive",
+    [HTTP_HEADER.acceleratorBuffering]: "no",
   },
 } as const;

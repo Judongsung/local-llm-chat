@@ -1,6 +1,7 @@
 import type {
   Chat,
-  ChatParameters,
+  ChatSettings,
+  ChatStageKey,
   ParameterProfile,
 } from "../../../../shared/types/chat.ts";
 import { UI_SYMBOLS, UI_TEXT } from "../../../constants/ui.ts";
@@ -13,12 +14,13 @@ type Props = {
   models: string[];
   sidebarOpen: boolean;
   onOpenSidebar: () => void;
-  onChangeSetting: <K extends keyof ChatParameters>(
-    key: K,
-    value: ChatParameters[K],
+  onChangeSetting: (
+    stage: ChatStageKey,
+    key: keyof ChatSettings,
+    value: ChatSettings[keyof ChatSettings],
   ) => void;
-  onSelectProfile: (profileId: string) => void;
-  onSaveSettings: () => void;
+  onSelectProfile: (stage: ChatStageKey, profileId: string) => void;
+  onSaveSettings: (stage: ChatStageKey) => void;
 };
 
 export function ChatHeader({
@@ -49,9 +51,7 @@ export function ChatHeader({
       </div>
       {chat && (
         <ChatSettingsPanel
-          settings={chat.settings}
-          profileId={chat.profileId}
-          profileFallback={chat.profileFallback}
+          chat={chat}
           profiles={profiles}
           models={models}
           busy={busy}

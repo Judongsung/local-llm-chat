@@ -3,12 +3,15 @@ import type {
   CompletionInput,
   CompletionStreamer,
 } from "./completionStreamer.ts";
+import { COMPLETION_CHUNK_TYPE } from "./completionStreamer.ts";
 import {
   HTTP_METHODS,
+  HTTP_HEADER,
   JSON_HEADERS,
   SSE,
 } from "../../shared/constants/http.ts";
 import { SERVER_ERROR_MESSAGES } from "../../shared/constants/server.ts";
+import { REASONING_EFFORT } from "../../shared/constants/chat.ts";
 import type {
   ImageAttachment,
   Message,
@@ -19,12 +22,23 @@ const CHAT_COMPLETIONS_PATH = "/chat/completions";
 const AUTHORIZATION_SCHEME = "Bearer";
 const SSE_DONE_EVENT = "[DONE]";
 const TRAILING_SLASHES = /\/+$/;
+const OPENAI_ROLE = {
+  system: "system",
+  user: "user",
+} as const;
+const OPENAI_CONTENT_TYPE = {
+  text: "text",
+  imageUrl: "image_url",
+} as const;
 
 type OpenAiMessageContent =
   | string
   | Array<
-    | { type: "text"; text: string }
-    | { type: "image_url"; image_url: { url: string } }
+    | { type: typeof OPENAI_CONTENT_TYPE.text; text: string }
+    | {
+        type: typeof OPENAI_CONTENT_TYPE.imageUrl;
+        image_url: { url: string };
+      }
   >;
 
 export function createOpenAiCompletionStreamer(
@@ -46,11 +60,11 @@ export async function* streamOpenAiCompletion(
 ): AsyncGenerator<CompletionChunk> {
   const messages = [
     ...(input.settings.systemPrompt.trim()
-      ? [{ role: "system", content: input.settings.systemPrompt }]
+      ? [{ role: OPENAI_ROLE.system, content: input.settings.systemPrompt }]
       : []),
     ...input.history.map(toOpenAiMessage),
     {
-      role: "user",
+      role: OPENAI_ROLE.user,
       content: toOpenAiContent(input.prompt, input.attachments),
     },
   ];
@@ -61,7 +75,7 @@ export async function* streamOpenAiCompletion(
       method: HTTP_METHODS.create,
       headers: {
         ...JSON_HEADERS,
-        Authorization: `${AUTHORIZATION_SCHEME} ${config.apiKey}`,
+        [HTTP_HEADER.authorization]: `${AUTHORIZATION_SCHEME} ${config.apiKey}`,
       },
       body: JSON.stringify({
         model: config.model,
@@ -69,7 +83,7 @@ export async function* streamOpenAiCompletion(
         temperature: input.settings.temperature,
         top_p: input.settings.topP,
         max_tokens: input.settings.maxTokens,
-        ...(input.settings.reasoningEffort === "none"
+        ...(input.settings.reasoningEffort === REASONING_EFFORT.none
           ? {}
           : { reasoning_effort: input.settings.reasoningEffort }),
         stream: true,
@@ -126,9 +140,11 @@ function toOpenAiContent(
 ): OpenAiMessageContent {
   if (attachments.length === 0) return text;
   return [
-    ...(text.trim() ? [{ type: "text" as const, text }] : []),
+    ...(text.trim()
+      ? [{ type: OPENAI_CONTENT_TYPE.text, text }]
+      : []),
     ...attachments.map((attachment) => ({
-      type: "image_url" as const,
+      type: OPENAI_CONTENT_TYPE.imageUrl,
       image_url: { url: attachment.dataUrl },
     })),
   ];
@@ -155,10 +171,16 @@ function parseEvent(event: string): CompletionChunk[] | null {
 
   const chunks: CompletionChunk[] = [];
   if (typeof choice.delta.reasoning === "string") {
-    chunks.push({ type: "reasoning", text: choice.delta.reasoning });
+    chunks.push({
+      type: COMPLETION_CHUNK_TYPE.reasoning,
+      text: choice.delta.reasoning,
+    });
   }
   if (typeof choice.delta.content === "string") {
-    chunks.push({ type: "content", text: choice.delta.content });
+    chunks.push({
+      type: COMPLETION_CHUNK_TYPE.content,
+      text: choice.delta.content,
+    });
   }
   return chunks;
 }

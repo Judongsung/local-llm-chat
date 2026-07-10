@@ -11,23 +11,29 @@ const chat: Chat = {
   title: "테스트",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
-  profileId: "profile-1",
-  profileFallback: false,
-  settings: {
-    model: "test-model",
-    systemPrompt: "",
-    temperature: 0.7,
-    topP: 1,
-    maxTokens: 256,
-    reasoningEffort: "none",
+  mode: "standard",
+  stages: {
+    generation: {
+      profileId: "profile-1",
+      profileFallback: false,
+      settings: {
+        model: "test-model",
+        systemPrompt: "",
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: 256,
+        reasoningEffort: "none",
+      },
+      messages: [],
+    },
   },
-  messages: [],
 };
 
 describe("chatState", () => {
-  it("낙관적 메시지 추가와 delta 반영을 불변 상태로 처리한다", () => {
+  it("단계별 낙관적 메시지와 delta를 불변 상태로 반영한다", () => {
     const pending = appendPendingTurn(
       chat,
+      "generation",
       "질문",
       [],
       "user-1",
@@ -36,29 +42,69 @@ describe("chatState", () => {
     );
     const updated = updateAssistantMessage(
       pending,
+      "generation",
       "assistant-1",
       "답변",
       "답변 검토",
       "complete",
     );
 
-    expect(chat.messages).toHaveLength(0);
-    expect(updated.messages).toHaveLength(2);
-    expect(updated.messages[1].content).toBe("답변");
-    expect(updated.messages[1].reasoning).toBe("답변 검토");
+    expect(chat.stages.generation.messages).toHaveLength(0);
+    expect(updated.stages.generation.messages).toHaveLength(2);
+    expect(updated.stages.generation.messages[1].content).toBe("답변");
+    expect(updated.stages.generation.messages[1].reasoning).toBe("답변 검토");
+    expect(
+      removePendingTurn(
+        pending,
+        "generation",
+        "user-1",
+        "assistant-1",
+      ).stages.generation.messages,
+    ).toEqual([]);
   });
 
-  it("저장되지 않은 turn을 함께 제거한다", () => {
+  it("번역 재시도는 같은 원문의 실패 turn을 교체한다", () => {
+    const translationChat: Chat = {
+      ...chat,
+      mode: "translation",
+      stages: {
+        generation: chat.stages.generation,
+        translation: {
+          ...chat.stages.generation,
+          messages: [
+            {
+              id: "old-user",
+              role: "user",
+              content: "English",
+              sourceMessageId: "english-1",
+              createdAt: chat.createdAt,
+              status: "complete",
+            },
+            {
+              id: "old-assistant",
+              role: "assistant",
+              content: "부분",
+              createdAt: chat.createdAt,
+              status: "error",
+            },
+          ],
+        },
+      },
+    };
     const pending = appendPendingTurn(
-      chat,
-      "질문",
+      translationChat,
+      "translation",
+      "English",
       [],
-      "user-1",
-      "assistant-1",
+      "new-user",
+      "new-assistant",
       chat.createdAt,
+      "english-1",
     );
-    expect(removePendingTurn(pending, "user-1", "assistant-1").messages).toEqual(
-      [],
-    );
+    if (pending.mode !== "translation") throw new Error("번역 채팅 필요");
+    expect(pending.stages.translation.messages.map(({ id }) => id)).toEqual([
+      "new-user",
+      "new-assistant",
+    ]);
   });
 });

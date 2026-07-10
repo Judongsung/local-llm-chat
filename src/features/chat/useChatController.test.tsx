@@ -2,6 +2,8 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Chat,
+  ChatSettings,
+  ChatStage,
   ChatSummary,
   ProfileCatalog,
 } from "../../../shared/types/chat.ts";
@@ -10,37 +12,40 @@ import { useChatController } from "./useChatController.ts";
 
 vi.mock("./chatApi.ts");
 
+const settings: ChatSettings = {
+  model: "test-model",
+  systemPrompt: "",
+  temperature: 0.7,
+  topP: 1,
+  maxTokens: 256,
+  reasoningEffort: "none",
+};
+const emptyStage: ChatStage = {
+  profileId: "profile-1",
+  profileFallback: false,
+  settings,
+  messages: [],
+};
 const chatOne: Chat = {
   id: "chat-1",
   title: "첫 대화",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
-  profileId: "profile-1",
-  profileFallback: false,
-  settings: {
-    model: "test-model",
-    systemPrompt: "",
-    temperature: 0.7,
-    topP: 1,
-    maxTokens: 256,
-    reasoningEffort: "none",
-  },
-  messages: [],
+  mode: "standard",
+  stages: { generation: emptyStage },
 };
-const chatTwo: Chat = { ...chatOne, id: "chat-2", title: "둘째 대화" };
-const summaries: ChatSummary[] = [
-  summary(chatOne),
-  summary(chatTwo),
-];
+const translationChat: Chat = {
+  ...chatOne,
+  id: "translation-1",
+  mode: "translation",
+  stages: {
+    generation: { ...emptyStage, settings: { ...settings, systemPrompt: "영어" } },
+    translation: { ...emptyStage, settings: { ...settings, systemPrompt: "번역" } },
+  },
+};
 const profileCatalog: ProfileCatalog = {
   defaultProfileId: "profile-1",
-  profiles: [
-    {
-      id: "profile-1",
-      name: "기본",
-      settings: chatOne.settings,
-    },
-  ],
+  profiles: [{ id: "profile-1", name: "기본", settings }],
 };
 
 beforeEach(() => {
@@ -52,191 +57,177 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("useChatController", () => {
-  it("대화가 없으면 첫 대화를 생성한다", async () => {
+  it("대화가 없으면 자동 생성하지 않고 유형 선택을 기다린다", async () => {
     vi.mocked(api.listChats).mockResolvedValue([]);
-    vi.mocked(api.createChat).mockResolvedValue(chatOne);
-
     const { result } = renderHook(() => useChatController());
 
-    await waitFor(() => expect(result.current.chat?.id).toBe("chat-1"));
-    expect(result.current.chats).toEqual([summary(chatOne)]);
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.chat).toBeNull();
+    expect(api.createChat).not.toHaveBeenCalled();
   });
 
-  it("대화를 선택하고 현재 대화를 삭제하면 다음 대화를 연다", async () => {
+  it("선택한 유형으로 새 대화를 만든다", async () => {
     vi.mocked(api.listChats)
-      .mockResolvedValueOnce(summaries)
-      .mockResolvedValueOnce([summary(chatOne)]);
-    vi.mocked(api.getChat)
-      .mockResolvedValueOnce(chatOne)
-      .mockResolvedValueOnce(chatTwo)
-      .mockResolvedValueOnce(chatOne);
-    vi.mocked(api.deleteChat).mockResolvedValue();
-
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([summary(translationChat)]);
+    vi.mocked(api.createChat).mockResolvedValue(translationChat);
     const { result } = renderHook(() => useChatController());
-    await waitFor(() => expect(result.current.chat?.id).toBe("chat-1"));
+    await waitFor(() => expect(result.current.initialized).toBe(true));
 
-    await act(() => result.current.openChat("chat-2"));
-    expect(result.current.chat?.id).toBe("chat-2");
-
-    await act(() => result.current.removeChat("chat-2"));
-    expect(result.current.chat?.id).toBe("chat-1");
+    await act(() => result.current.addChat("translation"));
+    expect(api.createChat).toHaveBeenCalledWith("translation");
+    expect(result.current.chat?.mode).toBe("translation");
   });
 
-  it("프로필을 즉시 전환하고 채팅 파라미터만 저장한다", async () => {
-    const precision = {
-      id: "profile-2",
-      name: "정밀",
-      settings: {
-        ...chatOne.settings,
-        systemPrompt: "정밀하게 답변",
-        temperature: 0.2,
+  it("단계별 프로필과 시스템 프롬프트를 포함한 설정을 저장한다", async () => {
+    const configured: Chat = {
+      ...translationChat,
+      stages: {
+        ...translationChat.stages,
+        translation: {
+          ...translationChat.stages.translation,
+          settings: { ...settings, systemPrompt: "새 번역 프롬프트", temperature: 0.4 },
+        },
       },
     };
-    const catalog = {
-      defaultProfileId: precision.id,
-      profiles: [...profileCatalog.profiles, precision],
-    };
-    const configured: Chat = {
-      ...chatOne,
-      profileId: precision.id,
-      settings: { ...precision.settings, temperature: 0.4 },
-    };
-    vi.mocked(api.listChats).mockResolvedValue(summaries);
-    vi.mocked(api.listProfiles).mockResolvedValue(catalog);
-    vi.mocked(api.getChat).mockResolvedValue(chatOne);
-    vi.mocked(api.selectProfile).mockResolvedValue({
-      ...chatOne,
-      profileId: precision.id,
-      settings: precision.settings,
-    });
-    vi.mocked(api.updateChatParameters).mockResolvedValue(configured);
-
+    vi.mocked(api.listChats).mockResolvedValue([summary(translationChat)]);
+    vi.mocked(api.getChat).mockResolvedValue(translationChat);
+    vi.mocked(api.selectProfile).mockResolvedValue(translationChat);
+    vi.mocked(api.updateChatSettings).mockResolvedValue(configured);
     const { result } = renderHook(() => useChatController());
-    await waitFor(() => expect(result.current.chat?.id).toBe("chat-1"));
+    await waitFor(() => expect(result.current.chat?.id).toBe("translation-1"));
 
-    await act(() => result.current.chooseProfile(precision.id));
-    expect(result.current.chat?.profileId).toBe(precision.id);
-
-    act(() => result.current.changeSetting("temperature", 0.4));
-    await act(() => result.current.saveSettings());
-    expect(api.updateChatParameters).toHaveBeenCalledWith("chat-1", {
-      model: "test-model",
-      temperature: 0.4,
-      topP: 1,
-      maxTokens: 256,
-      reasoningEffort: "none",
+    await act(() => result.current.chooseProfile("translation", "profile-2"));
+    expect(api.selectProfile).toHaveBeenCalledWith(
+      "translation-1",
+      "translation",
+      "profile-2",
+    );
+    act(() => {
+      result.current.changeSetting(
+        "translation",
+        "systemPrompt",
+        "새 번역 프롬프트",
+      );
+      result.current.changeSetting("translation", "temperature", 0.4);
     });
-    expect(result.current.chat?.settings.systemPrompt).toBe("정밀하게 답변");
+    await act(() => result.current.saveSettings("translation"));
+    expect(api.updateChatSettings).toHaveBeenCalledWith(
+      "translation-1",
+      "translation",
+      expect.objectContaining({
+        systemPrompt: "새 번역 프롬프트",
+        temperature: 0.4,
+      }),
+    );
   });
 
-  it("저장되지 않은 스트림 오류는 낙관적 turn을 제거하고 입력을 복원한다", async () => {
+  it("저장되지 않은 생성 오류에서 입력을 복원한다", async () => {
     vi.mocked(api.listChats).mockResolvedValue([summary(chatOne)]);
     vi.mocked(api.getChat).mockResolvedValue(chatOne);
     vi.mocked(api.streamMessage).mockImplementation(
       async (_id, _content, _attachments, _signal, onEvent) => {
         onEvent({
           type: "start",
+          stage: "generation",
           userMessageId: "user-1",
           assistantMessageId: "assistant-1",
         });
         onEvent({
           type: "error",
+          stage: "generation",
           message: "요청 실패",
-          partialSaved: false,
+          chat: chatOne,
         });
       },
     );
-
     const { result } = renderHook(() => useChatController());
     await waitFor(() => expect(result.current.chat?.id).toBe("chat-1"));
 
     act(() => result.current.setDraft("질문"));
     await act(() => result.current.sendMessage());
-
-    expect(result.current.chat?.messages).toEqual([]);
+    expect(result.current.chat?.stages.generation.messages).toEqual([]);
     expect(result.current.draft).toBe("질문");
     expect(result.current.error).toBe("요청 실패");
   });
 
-  it("추론과 답변 스트림을 분리해 반영한다", async () => {
-    vi.mocked(api.listChats).mockResolvedValue([summary(chatOne)]);
-    vi.mocked(api.getChat).mockResolvedValue(chatOne);
+  it("생성과 번역 스트림을 각 단계 이력에 반영한다", async () => {
+    const completed: Chat = {
+      ...translationChat,
+      stages: {
+        generation: {
+          ...translationChat.stages.generation,
+          messages: [
+            message("user-1", "user", "질문"),
+            message("english-1", "assistant", "English answer"),
+          ],
+        },
+        translation: {
+          ...translationChat.stages.translation,
+          messages: [
+            {
+              ...message("translation-user-1", "user", "English answer"),
+              sourceMessageId: "english-1",
+            },
+            message("korean-1", "assistant", "한글 답변"),
+          ],
+        },
+      },
+    };
+    vi.mocked(api.listChats).mockResolvedValue([summary(translationChat)]);
+    vi.mocked(api.getChat).mockResolvedValue(translationChat);
     vi.mocked(api.streamMessage).mockImplementation(
       async (_id, _content, _attachments, _signal, onEvent) => {
         onEvent({
           type: "start",
+          stage: "generation",
           userMessageId: "user-1",
-          assistantMessageId: "assistant-1",
+          assistantMessageId: "english-1",
         });
-        onEvent({ type: "reasoning_delta", text: "검토" });
-        onEvent({ type: "delta", text: "답변" });
+        onEvent({ type: "delta", stage: "generation", text: "English answer" });
         onEvent({
-          type: "error",
-          message: "응답 오류",
-          partialSaved: true,
+          type: "start",
+          stage: "translation",
+          userMessageId: "translation-user-1",
+          assistantMessageId: "korean-1",
+          sourceMessageId: "english-1",
         });
+        onEvent({ type: "delta", stage: "translation", text: "한글 답변" });
+        onEvent({ type: "done", chat: completed });
       },
     );
-
     const { result } = renderHook(() => useChatController());
-    await waitFor(() => expect(result.current.chat?.id).toBe("chat-1"));
+    await waitFor(() => expect(result.current.chat?.id).toBe("translation-1"));
 
     act(() => result.current.setDraft("질문"));
     await act(() => result.current.sendMessage());
-
-    expect(result.current.chat?.messages[1]).toMatchObject({
-      content: "답변",
-      reasoning: "검토",
-      status: "error",
-    });
-  });
-
-  it("이전 프롬프트를 수정하고 해당 turn을 삭제한다", async () => {
-    const chatWithTurn: Chat = {
-      ...chatOne,
-      messages: [
-        {
-          id: "user-1",
-          role: "user",
-          content: "질문",
-          createdAt: chatOne.createdAt,
-          status: "complete",
-        },
-        {
-          id: "assistant-1",
-          role: "assistant",
-          content: "답변",
-          createdAt: chatOne.createdAt,
-          status: "complete",
-        },
-      ],
-    };
-    const edited: Chat = {
-      ...chatWithTurn,
-      title: "수정된 질문",
-      messages: [
-        { ...chatWithTurn.messages[0], content: "수정된 질문" },
-        chatWithTurn.messages[1],
-      ],
-    };
-    const empty: Chat = { ...edited, messages: [] };
-    vi.mocked(api.listChats).mockResolvedValue([summary(chatWithTurn)]);
-    vi.mocked(api.getChat).mockResolvedValue(chatWithTurn);
-    vi.mocked(api.updateUserMessage).mockResolvedValue(edited);
-    vi.mocked(api.deleteTurn).mockResolvedValue(empty);
-
-    const { result } = renderHook(() => useChatController());
-    await waitFor(() => expect(result.current.chat?.id).toBe("chat-1"));
-
-    await act(() => result.current.editPrompt("user-1", "수정된 질문"));
-    expect(result.current.chat?.messages[0].content).toBe("수정된 질문");
-
-    await act(() => result.current.removePrompt("user-1"));
-    expect(result.current.chat?.messages).toEqual([]);
+    expect(result.current.chat?.stages.generation.messages[1].content).toBe(
+      "English answer",
+    );
+    if (result.current.chat?.mode !== "translation") {
+      throw new Error("번역 채팅이 필요합니다.");
+    }
+    expect(result.current.chat.stages.translation.messages[1].content).toBe(
+      "한글 답변",
+    );
   });
 });
 
 function summary(chat: Chat): ChatSummary {
-  const { id, title, createdAt, updatedAt } = chat;
-  return { id, title, createdAt, updatedAt };
+  const { id, title, createdAt, updatedAt, mode } = chat;
+  return { id, title, createdAt, updatedAt, mode };
+}
+
+function message(
+  id: string,
+  role: "user" | "assistant",
+  content: string,
+) {
+  return {
+    id,
+    role,
+    content,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    status: "complete" as const,
+  };
 }

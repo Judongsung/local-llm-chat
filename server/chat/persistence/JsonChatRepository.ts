@@ -10,40 +10,46 @@ import {
 import { dirname, join } from "node:path";
 import type {
   Chat,
-  ChatParameters,
+  ChatMode,
   ChatSettings,
   ChatSettingsOverrides,
+  ChatStage,
+  ChatStageKey,
   ChatSummary,
   Message,
   ParameterProfile,
   ProfileCatalog,
 } from "../../../shared/types/chat.ts";
 import {
+  CHAT_MODE,
+  CHAT_SETTING_KEYS,
+  CHAT_STAGE,
   CHAT_LIMITS,
   DEFAULT_CHAT_TITLE,
+  DEFAULT_GENERATION_SYSTEM_PROMPT,
   DEFAULT_PROFILE_NAME,
+  DEFAULT_TRANSLATION_SYSTEM_PROMPT,
+  MESSAGE_ROLE,
   STORE_VERSION,
 } from "../../../shared/constants/chat.ts";
-import { SERVER_ERROR_MESSAGES } from "../../../shared/constants/server.ts";
+import {
+  SERVER_ERROR_MESSAGES,
+  SERVER_FILE_ENCODING,
+} from "../../../shared/constants/server.ts";
 import type { ChatRepository } from "../chatRepository.ts";
 import {
   parseChatFile,
   parseProfileStore,
   type ProfileStore,
   type StoredChat,
+  type StoredChatStage,
 } from "./storeSchema.ts";
 
 const CHATS_DIRECTORY = "chats";
 const PROFILES_FILE = "profiles.json";
 const JSON_SUFFIX = ".json";
 const SAFE_ID = /^[A-Za-z0-9_-]+$/;
-const PARAMETER_KEYS = [
-  "model",
-  "temperature",
-  "topP",
-  "maxTokens",
-  "reasoningEffort",
-] as const;
+const FILE_NOT_FOUND_CODE = "ENOENT";
 const copy = <T>(value: T): T => structuredClone(value);
 
 type RepositoryData = {
@@ -83,7 +89,7 @@ export class JsonChatRepository implements ChatRepository {
     try {
       entries = await readdir(this.chatsDirectory, { withFileTypes: true });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      if ((error as NodeJS.ErrnoException).code === FILE_NOT_FOUND_CODE) return;
       throw error;
     }
 
@@ -94,30 +100,42 @@ export class JsonChatRepository implements ChatRepository {
           const id = entry.name.slice(0, -JSON_SUFFIX.length);
           assertSafeId(id);
           const value: unknown = JSON.parse(
-            await readFile(join(this.chatsDirectory, entry.name), "utf8"),
+            await readFile(
+              join(this.chatsDirectory, entry.name),
+              SERVER_FILE_ENCODING,
+            ),
           );
-          return parseChatFile(value, id);
+          const chat = parseChatFile(value, id);
+          if ((value as { version?: unknown }).version !== STORE_VERSION) {
+            await this.saveChat(chat);
+          }
+          return chat;
         }),
     );
 
-    const missing = this.data.chats.filter(
-      (chat) => !this.profile(chat.profileId),
-    );
-    for (const chat of missing) {
-      chat.profileId = this.data.profileStore.defaultProfileId;
-      chat.settingsOverrides = {};
-      chat.profileFallback = true;
+    const changed = new Set<StoredChat>();
+    for (const chat of this.data.chats) {
+      for (const stageKey of stageKeys(chat)) {
+        const stage = storedStage(chat, stageKey);
+        if (stage && !this.profile(stage.profileId)) {
+          stage.profileId = this.data.profileStore.defaultProfileId;
+          stage.settingsOverrides = initialOverrides(chat.mode, stageKey);
+          stage.profileFallback = true;
+          changed.add(chat);
+        }
+      }
     }
-    await Promise.all(missing.map((chat) => this.saveChat(chat)));
+    await Promise.all([...changed].map((chat) => this.saveChat(chat)));
   }
 
   list(): ChatSummary[] {
     return this.data.chats
-      .map(({ id, title, createdAt, updatedAt }) => ({
+      .map(({ id, title, createdAt, updatedAt, mode }) => ({
         id,
         title,
         createdAt,
         updatedAt,
+        mode,
       }))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
@@ -132,20 +150,42 @@ export class JsonChatRepository implements ChatRepository {
     return copy({ defaultProfileId, profiles });
   }
 
-  create(): Promise<Chat> {
+  create(mode: ChatMode = CHAT_MODE.standard): Promise<Chat> {
     return this.change(
       (data) => {
         const now = new Date().toISOString();
-        const chat: StoredChat = {
+        const profile = this.profile(data.profileStore.defaultProfileId);
+        if (!profile) throw new Error(SERVER_ERROR_MESSAGES.profileNotFound);
+        const stage = (stageKey: ChatStageKey): StoredChatStage => ({
+          profileId: profile.id,
+          profileFallback: false,
+          settingsOverrides: overridesFrom(profile.settings, {
+            ...profile.settings,
+            ...initialOverrides(mode, stageKey),
+          }),
+          messages: [],
+        });
+        const base = {
           id: randomUUID(),
           title: DEFAULT_CHAT_TITLE,
           createdAt: now,
           updatedAt: now,
-          profileId: data.profileStore.defaultProfileId,
-          profileFallback: false,
-          settingsOverrides: {},
-          messages: [],
         };
+        const chat: StoredChat =
+          mode === CHAT_MODE.translation
+            ? {
+                ...base,
+                mode,
+                stages: {
+                  generation: stage(CHAT_STAGE.generation),
+                  translation: stage(CHAT_STAGE.translation),
+                },
+              }
+            : {
+                ...base,
+                mode,
+                stages: { generation: stage(CHAT_STAGE.generation) },
+              };
         data.chats.push(chat);
         return chat;
       },
@@ -194,18 +234,26 @@ export class JsonChatRepository implements ChatRepository {
         );
         if (index < 0 || data.profileStore.profiles.length === 1) return null;
         const [deleted] = data.profileStore.profiles.splice(index, 1);
-        const fallback =
+        const fallbackId =
           data.profileStore.defaultProfileId === id
             ? data.profileStore.profiles[0].id
             : data.profileStore.defaultProfileId;
-        data.profileStore.defaultProfileId = fallback;
-        const affected = data.chats.filter((chat) => chat.profileId === id);
-        affected.forEach((chat) => {
-          chat.profileId = fallback;
-          chat.settingsOverrides = {};
-          chat.profileFallback = true;
-        });
-        return { deleted, affected };
+        data.profileStore.defaultProfileId = fallbackId;
+        const fallback = this.profile(fallbackId);
+        if (!fallback) throw new Error(SERVER_ERROR_MESSAGES.profileNotFound);
+        const affected = new Set<StoredChat>();
+        for (const chat of data.chats) {
+          for (const stageKey of stageKeys(chat)) {
+            const stage = storedStage(chat, stageKey);
+            if (stage?.profileId !== id) continue;
+            const effective = { ...deleted.settings, ...stage.settingsOverrides };
+            stage.profileId = fallbackId;
+            stage.settingsOverrides = overridesFrom(fallback.settings, effective);
+            stage.profileFallback = true;
+            affected.add(chat);
+          }
+        }
+        return { deleted, affected: [...affected] };
       },
       async (result) => {
         if (!result) return;
@@ -215,37 +263,46 @@ export class JsonChatRepository implements ChatRepository {
     ).then((result) => result?.deleted ?? null);
   }
 
-  selectProfile(chatId: string, profileId: string): Promise<Chat | null> {
+  selectProfile(
+    chatId: string,
+    stageKey: ChatStageKey,
+    profileId: string,
+  ): Promise<Chat | null> {
     return this.change(
       (data) => {
         const chat = data.chats.find((item) => item.id === chatId);
-        if (!chat || !this.profile(profileId)) return null;
-        chat.profileId = profileId;
-        chat.profileFallback = false;
-        chat.settingsOverrides = {};
-        data.profileStore.defaultProfileId = profileId;
+        const stage = chat ? storedStage(chat, stageKey) : null;
+        if (!chat || !stage || !this.profile(profileId)) return null;
+        stage.profileId = profileId;
+        stage.profileFallback = false;
+        stage.settingsOverrides = {};
+        if (stageKey === CHAT_STAGE.generation) {
+          data.profileStore.defaultProfileId = profileId;
+        }
         return chat;
       },
       async (chat) => {
         if (!chat) return;
-        await this.saveProfiles();
+        if (stageKey === CHAT_STAGE.generation) await this.saveProfiles();
         await this.saveChat(chat);
       },
     ).then((chat) => (chat ? this.toChat(chat) : null));
   }
 
-  updateChatParameters(
+  updateChatSettings(
     chatId: string,
-    parameters: ChatParameters,
+    stageKey: ChatStageKey,
+    settings: ChatSettings,
   ): Promise<Chat | null> {
     return this.change(
       (data) => {
         const chat = data.chats.find((item) => item.id === chatId);
-        if (!chat) return null;
-        const profile = this.profile(chat.profileId);
+        const stage = chat ? storedStage(chat, stageKey) : null;
+        if (!chat || !stage) return null;
+        const profile = this.profile(stage.profileId);
         if (!profile) return null;
-        chat.settingsOverrides = overridesFrom(profile.settings, parameters);
-        chat.profileFallback = false;
+        stage.settingsOverrides = overridesFrom(profile.settings, settings);
+        stage.profileFallback = false;
         return chat;
       },
       async (chat) => {
@@ -276,14 +333,16 @@ export class JsonChatRepository implements ChatRepository {
     return this.change(
       (data) => {
         const chat = data.chats.find((item) => item.id === chatId);
-        const message = chat?.messages.find(
-          (item) => item.id === messageId && item.role === "user",
+        const message = chat?.stages.generation.messages.find(
+          (item) => item.id === messageId && item.role === MESSAGE_ROLE.user,
         );
         if (!chat || !message) return null;
         message.content = content;
         chat.updatedAt = new Date().toISOString();
         if (
-          chat.messages.find((item) => item.role === "user")?.id === messageId
+          chat.stages.generation.messages.find(
+            (item) => item.role === MESSAGE_ROLE.user,
+          )?.id === messageId
         ) {
           chat.title = titleFrom(content);
         }
@@ -299,18 +358,33 @@ export class JsonChatRepository implements ChatRepository {
     return this.change(
       (data) => {
         const chat = data.chats.find((item) => item.id === chatId);
-        const messageIndex = chat?.messages.findIndex(
-          (item) => item.id === messageId && item.role === "user",
+        const messages = chat?.stages.generation.messages;
+        const messageIndex = messages?.findIndex(
+          (item) => item.id === messageId && item.role === MESSAGE_ROLE.user,
         );
-        if (!chat || messageIndex === undefined || messageIndex < 0) return null;
-        const followingMessage = chat.messages[messageIndex + 1];
-        chat.messages.splice(
+        if (!chat || !messages || messageIndex === undefined || messageIndex < 0) {
+          return null;
+        }
+        const assistant = messages[messageIndex + 1];
+        messages.splice(
           messageIndex,
-          followingMessage?.role === "assistant" ? 2 : 1,
+          assistant?.role === MESSAGE_ROLE.assistant ? 2 : 1,
         );
+        if (
+          chat.mode === CHAT_MODE.translation &&
+          assistant?.role === MESSAGE_ROLE.assistant
+        ) {
+          const translationIndex = chat.stages.translation.messages.findIndex(
+            (item) => item.sourceMessageId === assistant.id,
+          );
+          if (translationIndex >= 0) {
+            chat.stages.translation.messages.splice(translationIndex, 2);
+          }
+        }
         chat.updatedAt = new Date().toISOString();
         chat.title = titleFrom(
-          chat.messages.find((item) => item.role === "user")?.content ?? "",
+          messages.find((item) => item.role === MESSAGE_ROLE.user)?.content ??
+            "",
         );
         return chat;
       },
@@ -322,18 +396,70 @@ export class JsonChatRepository implements ChatRepository {
 
   appendTurn(
     id: string,
+    stageKey: ChatStageKey,
     user: Message,
     assistant: Message,
   ): Promise<Chat | null> {
     return this.change(
       (data) => {
         const chat = data.chats.find((item) => item.id === id);
-        if (!chat) return null;
-        chat.messages.push(copy(user), copy(assistant));
+        const stage = chat ? storedStage(chat, stageKey) : null;
+        if (!chat || !stage) return null;
+        stage.messages.push(copy(user), copy(assistant));
         chat.updatedAt = new Date().toISOString();
-        if (chat.title === DEFAULT_CHAT_TITLE) {
+        if (
+          stageKey === CHAT_STAGE.generation &&
+          chat.title === DEFAULT_CHAT_TITLE
+        ) {
           chat.title = titleFrom(user.content);
         }
+        return chat;
+      },
+      async (chat) => {
+        if (chat) await this.saveChat(chat);
+      },
+    ).then((chat) => (chat ? this.toChat(chat) : null));
+  }
+
+  upsertTranslationTurn(
+    id: string,
+    sourceMessageId: string,
+    user: Message,
+    assistant: Message,
+  ): Promise<Chat | null> {
+    return this.change(
+      (data) => {
+        const chat = data.chats.find((item) => item.id === id);
+        if (chat?.mode !== CHAT_MODE.translation) return null;
+        const sourceExists = chat.stages.generation.messages.some(
+          (message) =>
+            message.id === sourceMessageId &&
+            message.role === MESSAGE_ROLE.assistant,
+        );
+        if (!sourceExists || user.sourceMessageId !== sourceMessageId) return null;
+
+        const translations = chat.stages.translation.messages;
+        const existing = translations.findIndex(
+          (message) => message.sourceMessageId === sourceMessageId,
+        );
+        if (existing >= 0) {
+          translations.splice(existing, 2, copy(user), copy(assistant));
+        } else {
+          const sourceOrder = generationAssistantIds(chat).indexOf(sourceMessageId);
+          let insertion = translations.length;
+          for (let index = 0; index < translations.length; index += 2) {
+            const existingSource = translations[index]?.sourceMessageId;
+            if (
+              existingSource &&
+              generationAssistantIds(chat).indexOf(existingSource) > sourceOrder
+            ) {
+              insertion = index;
+              break;
+            }
+          }
+          translations.splice(insertion, 0, copy(user), copy(assistant));
+        }
+        chat.updatedAt = new Date().toISOString();
         return chat;
       },
       async (chat) => {
@@ -367,11 +493,16 @@ export class JsonChatRepository implements ChatRepository {
   private async loadProfiles() {
     try {
       const value: unknown = JSON.parse(
-        await readFile(this.profilesPath, "utf8"),
+        await readFile(this.profilesPath, SERVER_FILE_ENCODING),
       );
       this.data.profileStore = parseProfileStore(value);
+      if ((value as { version?: unknown }).version !== STORE_VERSION) {
+        await this.saveProfiles();
+      }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      if ((error as NodeJS.ErrnoException).code !== FILE_NOT_FOUND_CODE) {
+        throw error;
+      }
       await this.saveProfiles();
     }
   }
@@ -381,13 +512,38 @@ export class JsonChatRepository implements ChatRepository {
   }
 
   private toChat(chat: StoredChat): Chat {
-    const profile = this.profile(chat.profileId);
-    if (!profile) throw new Error(SERVER_ERROR_MESSAGES.profileNotFound);
-    const { settingsOverrides: overrides, ...stored } = chat;
+    const base = {
+      id: chat.id,
+      title: chat.title,
+      createdAt: chat.createdAt,
+      updatedAt: chat.updatedAt,
+    };
+    if (chat.mode === CHAT_MODE.translation) {
+      return copy({
+        ...base,
+        mode: chat.mode,
+        stages: {
+          generation: this.toChatStage(chat.stages.generation),
+          translation: this.toChatStage(chat.stages.translation),
+        },
+      });
+    }
     return copy({
-      ...stored,
-      settings: { ...profile.settings, ...overrides },
+      ...base,
+      mode: chat.mode,
+      stages: { generation: this.toChatStage(chat.stages.generation) },
     });
+  }
+
+  private toChatStage(stage: StoredChatStage): ChatStage {
+    const profile = this.profile(stage.profileId);
+    if (!profile) throw new Error(SERVER_ERROR_MESSAGES.profileNotFound);
+    return {
+      profileId: stage.profileId,
+      profileFallback: stage.profileFallback,
+      settings: { ...profile.settings, ...stage.settingsOverrides },
+      messages: copy(stage.messages),
+    };
   }
 
   private saveProfiles() {
@@ -411,7 +567,7 @@ export class JsonChatRepository implements ChatRepository {
     const temporary = `${filePath}.${process.pid}.tmp`;
     try {
       await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-        encoding: "utf8",
+        encoding: SERVER_FILE_ENCODING,
         mode: 0o600,
       });
       await rename(temporary, filePath);
@@ -421,17 +577,50 @@ export class JsonChatRepository implements ChatRepository {
   }
 }
 
+function stageKeys(chat: StoredChat): ChatStageKey[] {
+  return chat.mode === CHAT_MODE.translation
+    ? [CHAT_STAGE.generation, CHAT_STAGE.translation]
+    : [CHAT_STAGE.generation];
+}
+
+function storedStage(
+  chat: StoredChat,
+  stage: ChatStageKey,
+): StoredChatStage | null {
+  if (stage === CHAT_STAGE.generation) return chat.stages.generation;
+  return chat.mode === CHAT_MODE.translation ? chat.stages.translation : null;
+}
+
+function initialOverrides(
+  mode: ChatMode,
+  stage: ChatStageKey,
+): ChatSettingsOverrides {
+  if (mode !== CHAT_MODE.translation) return {};
+  return {
+    systemPrompt:
+      stage === CHAT_STAGE.generation
+        ? DEFAULT_GENERATION_SYSTEM_PROMPT
+        : DEFAULT_TRANSLATION_SYSTEM_PROMPT,
+  };
+}
+
 function overridesFrom(
   defaults: ChatSettings,
-  parameters: ChatParameters,
+  settings: ChatSettings,
 ): ChatSettingsOverrides {
   const overrides: ChatSettingsOverrides = {};
-  for (const key of PARAMETER_KEYS) {
-    if (parameters[key] !== defaults[key]) {
-      Object.assign(overrides, { [key]: parameters[key] });
+  for (const key of CHAT_SETTING_KEYS) {
+    if (settings[key] !== defaults[key]) {
+      Object.assign(overrides, { [key]: settings[key] });
     }
   }
   return overrides;
+}
+
+function generationAssistantIds(chat: StoredChat): string[] {
+  return chat.stages.generation.messages
+    .filter((message) => message.role === MESSAGE_ROLE.assistant)
+    .map((message) => message.id);
 }
 
 function assertSafeId(id: string) {

@@ -1,5 +1,6 @@
 import type {
   Chat,
+  ChatMode,
   ChatSettings,
   ChatSettingsOverrides,
   ImageAttachment,
@@ -8,15 +9,46 @@ import type {
   ProfileCatalog,
 } from "../../../shared/types/chat.ts";
 import {
+  CHAT_MODE,
+  CHAT_SETTING_KEYS,
+  CHAT_STAGE,
   CHAT_LIMITS,
   IMAGE_MIME_TYPES,
+  MESSAGE_ROLE,
+  MESSAGE_STATUS,
+  REASONING_EFFORT,
   STORE_VERSION,
 } from "../../../shared/constants/chat.ts";
 import { SERVER_ERROR_MESSAGES } from "../../../shared/constants/server.ts";
 
-export type StoredChat = Omit<Chat, "settings"> & {
+const LEGACY_STORE_VERSION = 1;
+
+export type StoredChatStage = {
+  profileId: string;
+  profileFallback: boolean;
   settingsOverrides: ChatSettingsOverrides;
+  messages: Message[];
 };
+
+type StoredChatBase = Pick<
+  Chat,
+  "id" | "title" | "createdAt" | "updatedAt"
+>;
+
+export type StoredChat = StoredChatBase &
+  (
+    | {
+        mode: typeof CHAT_MODE.standard;
+        stages: { generation: StoredChatStage };
+      }
+    | {
+        mode: typeof CHAT_MODE.translation;
+        stages: {
+          generation: StoredChatStage;
+          translation: StoredChatStage;
+        };
+      }
+  );
 
 export type ProfileStore = ProfileCatalog & {
   version: typeof STORE_VERSION;
@@ -27,7 +59,8 @@ const copy = <T>(value: T): T => structuredClone(value);
 export function parseProfileStore(value: unknown): ProfileStore {
   if (
     !isRecord(value) ||
-    value.version !== STORE_VERSION ||
+    (value.version !== STORE_VERSION &&
+      value.version !== LEGACY_STORE_VERSION) ||
     !isString(value.defaultProfileId) ||
     !Array.isArray(value.profiles) ||
     value.profiles.length === 0 ||
@@ -55,19 +88,27 @@ export function parseProfileStore(value: unknown): ProfileStore {
   };
 }
 
-export function parseChatFile(
-  value: unknown,
-  expectedId: string,
-): StoredChat {
-  if (
-    !isRecord(value) ||
-    value.version !== STORE_VERSION ||
-    !isStoredChat(value.chat) ||
-    value.chat.id !== expectedId
-  ) {
+export function parseChatFile(value: unknown, expectedId: string): StoredChat {
+  if (!isRecord(value)) {
     throw new Error(SERVER_ERROR_MESSAGES.invalidChatFile);
   }
-  return copy(value.chat);
+
+  let chat: StoredChat;
+  if (value.version === STORE_VERSION && isStoredChat(value.chat)) {
+    chat = value.chat;
+  } else if (
+    value.version === LEGACY_STORE_VERSION &&
+    isLegacyStoredChat(value.chat)
+  ) {
+    chat = migrateLegacyChat(value.chat);
+  } else {
+    throw new Error(SERVER_ERROR_MESSAGES.invalidChatFile);
+  }
+
+  if (chat.id !== expectedId) {
+    throw new Error(SERVER_ERROR_MESSAGES.invalidChatFile);
+  }
+  return copy(chat);
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -113,15 +154,133 @@ function isSettings(value: unknown): value is ChatSettings {
   );
 }
 
-function isStoredChat(
-  value: unknown,
-): value is StoredChat {
+function isStoredChat(value: unknown): value is StoredChat {
+  if (
+    !isRecord(value) ||
+    !isChatMetadata(value) ||
+    !isChatMode(value.mode) ||
+    !isRecord(value.stages) ||
+    !isGenerationStage(value.stages.generation)
+  ) {
+    return false;
+  }
+  if (value.mode === CHAT_MODE.standard) {
+    return value.stages.translation === undefined;
+  }
+  return (
+    isTranslationStage(value.stages.translation, value.stages.generation) &&
+    Object.keys(value.stages).every(
+      (key) => key === CHAT_STAGE.generation || key === CHAT_STAGE.translation,
+    )
+  );
+}
+
+function isLegacyStoredChat(value: unknown): value is {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  profileId: string;
+  profileFallback: boolean;
+  settingsOverrides: ChatSettingsOverrides;
+  messages: Message[];
+} {
   return (
     isRecord(value) &&
+    isChatMetadata(value) &&
+    isString(value.profileId) &&
+    typeof value.profileFallback === "boolean" &&
+    isOverrides(value.settingsOverrides) &&
+    isGenerationMessages(value.messages)
+  );
+}
+
+function migrateLegacyChat(value: {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  profileId: string;
+  profileFallback: boolean;
+  settingsOverrides: ChatSettingsOverrides;
+  messages: Message[];
+}): StoredChat {
+  const {
+    id,
+    title,
+    createdAt,
+    updatedAt,
+    profileId,
+    profileFallback,
+    settingsOverrides,
+    messages,
+  } = value;
+  return {
+    id,
+    title,
+    createdAt,
+    updatedAt,
+    mode: CHAT_MODE.standard,
+    stages: {
+      generation: {
+        profileId,
+        profileFallback,
+        settingsOverrides,
+        messages,
+      },
+    },
+  };
+}
+
+function isChatMetadata(value: Record<string, unknown>) {
+  return (
     isString(value.id) &&
     isString(value.title) &&
     isString(value.createdAt) &&
-    isString(value.updatedAt) &&
+    isString(value.updatedAt)
+  );
+}
+
+function isChatMode(value: unknown): value is ChatMode {
+  return value === CHAT_MODE.standard || value === CHAT_MODE.translation;
+}
+
+function isGenerationStage(value: unknown): value is StoredChatStage {
+  return isStage(value) && isGenerationMessages(value.messages);
+}
+
+function isTranslationStage(
+  value: unknown,
+  generation: StoredChatStage,
+): value is StoredChatStage {
+  if (!isStage(value)) return false;
+  const sourceIds = new Set(
+    generation.messages
+      .filter((message) => message.role === MESSAGE_ROLE.assistant)
+      .map((message) => message.id),
+  );
+  const usedSources = new Set<string>();
+  for (let index = 0; index < value.messages.length; index += 2) {
+    const user = value.messages[index];
+    const assistant = value.messages[index + 1];
+    if (
+      user?.role !== MESSAGE_ROLE.user ||
+      !user.sourceMessageId ||
+      !sourceIds.has(user.sourceMessageId) ||
+      usedSources.has(user.sourceMessageId) ||
+      assistant?.role !== MESSAGE_ROLE.assistant ||
+      assistant.sourceMessageId !== undefined
+    ) {
+      return false;
+    }
+    usedSources.add(user.sourceMessageId);
+  }
+  return true;
+}
+
+function isStage(value: unknown): value is StoredChatStage {
+  return (
+    isRecord(value) &&
     isString(value.profileId) &&
     typeof value.profileFallback === "boolean" &&
     isOverrides(value.settingsOverrides) &&
@@ -130,21 +289,27 @@ function isStoredChat(
   );
 }
 
+function isGenerationMessages(value: unknown): value is Message[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (message) => isMessage(message) && message.sourceMessageId === undefined,
+    )
+  );
+}
+
 function isOverrides(value: unknown): value is ChatSettingsOverrides {
   if (!isRecord(value)) return false;
-  const allowed = new Set([
-    "model",
-    "temperature",
-    "topP",
-    "maxTokens",
-    "reasoningEffort",
-  ]);
+  const allowed = new Set<string>(CHAT_SETTING_KEYS);
   if (Object.keys(value).some((key) => !allowed.has(key))) return false;
   return (
     (value.model === undefined ||
       (isString(value.model) &&
         Boolean(value.model.trim()) &&
         value.model.length <= CHAT_LIMITS.model)) &&
+    (value.systemPrompt === undefined ||
+      (isString(value.systemPrompt) &&
+        value.systemPrompt.length <= CHAT_LIMITS.systemPrompt)) &&
     (value.temperature === undefined ||
       inRange(
         value.temperature,
@@ -167,10 +332,7 @@ function isOverrides(value: unknown): value is ChatSettingsOverrides {
 
 function isReasoningEffort(value: unknown) {
   return (
-    value === "none" ||
-    value === "low" ||
-    value === "medium" ||
-    value === "high"
+    Object.values(REASONING_EFFORT).some((effort) => effort === value)
   );
 }
 
@@ -178,16 +340,18 @@ function isMessage(value: unknown): value is Message {
   return (
     isRecord(value) &&
     isString(value.id) &&
-    (value.role === "user" || value.role === "assistant") &&
+    (value.role === MESSAGE_ROLE.user ||
+      value.role === MESSAGE_ROLE.assistant) &&
     isString(value.content) &&
+    (value.sourceMessageId === undefined || isString(value.sourceMessageId)) &&
     (value.attachments === undefined ||
       (Array.isArray(value.attachments) &&
         value.attachments.every(isImageAttachment))) &&
     (value.reasoning === undefined || isString(value.reasoning)) &&
     isString(value.createdAt) &&
-    (value.status === "complete" ||
-      value.status === "stopped" ||
-      value.status === "error")
+    (value.status === MESSAGE_STATUS.complete ||
+      value.status === MESSAGE_STATUS.stopped ||
+      value.status === MESSAGE_STATUS.error)
   );
 }
 

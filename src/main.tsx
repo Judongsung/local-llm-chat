@@ -2,4 +2,6 @@ import { createRoot } from "react-dom/client";
 import App from "./app/App.tsx";
 import "./styles/base.css";
 
-createRoot(document.getElementById("root")!).render(<App />);
+const APP_ROOT_ELEMENT_ID = "root";
+
+createRoot(document.getElementById(APP_ROOT_ELEMENT_ID)!).render(<App />);

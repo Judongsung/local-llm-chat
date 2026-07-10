@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "start": "node --env-file=.env server/index.ts",
     "test": "npm run test:server && npm run test:client",
-    "test:server": "node --test server/loadServerConfig.test.ts server/chat/persistence/JsonChatRepository.test.ts server/llm/openAiCompletionStreamer.test.ts server/http/createApp.test.ts",
+    "test:server": "node --test server/loadServerConfig.test.ts server/chat/persistence/JsonChatRepository.test.ts server/chat/chatService.test.ts server/llm/openAiCompletionStreamer.test.ts server/http/createApp.test.ts",
     "test:client": "vitest run"
   },
   "dependencies": {

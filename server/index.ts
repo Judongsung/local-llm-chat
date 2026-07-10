@@ -9,7 +9,10 @@ import { JsonChatRepository } from "./chat/persistence/JsonChatRepository.ts";
 import { loadConfig } from "./loadServerConfig.ts";
 import { createApi } from "./http/createApp.ts";
 import { createOpenAiCompletionStreamer } from "./llm/openAiCompletionStreamer.ts";
-import { SERVER_STATIC_OPTIONS } from "../shared/constants/server.ts";
+import {
+  SERVER_STARTUP_MESSAGES,
+  SERVER_STATIC_OPTIONS,
+} from "../shared/constants/server.ts";
 
 const PARENT_DIRECTORY = "..";
 const DEVELOPMENT_FLAG = "--dev";
@@ -46,9 +49,7 @@ if (development) {
 } else {
   const output = join(root, BUILD_DIRECTORY);
   if (!existsSync(output)) {
-    throw new Error(
-      `${BUILD_DIRECTORY} 폴더가 없습니다. 먼저 npm run build를 실행하세요.`,
-    );
+    throw new Error(SERVER_STARTUP_MESSAGES.missingBuild(BUILD_DIRECTORY));
   }
   app.use(express.static(output, SERVER_STATIC_OPTIONS));
   app.use((_request, response) =>
@@ -57,5 +58,5 @@ if (development) {
 }
 
 server.listen(config.port, config.host, () => {
-  console.log(`Local LLM Chat: http://${config.host}:${config.port}`);
+  console.log(SERVER_STARTUP_MESSAGES.listening(config.host, config.port));
 });

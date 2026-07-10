@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   Chat,
-  ChatParameters,
+  ChatMode,
   ChatSettings,
+  ChatStageKey,
   ChatSummary,
   ImageAttachment,
   MessageStatus,
@@ -10,6 +11,12 @@ import type {
   ProfileCatalog,
   StreamEvent,
 } from "../../../shared/types/chat.ts";
+import {
+  CHAT_MODE,
+  CHAT_STAGE,
+  MESSAGE_STATUS,
+  STREAM_EVENT,
+} from "../../../shared/constants/chat.ts";
 import {
   createProfile,
   createChat,
@@ -20,19 +27,32 @@ import {
   listChats,
   listModels,
   listProfiles,
+  retryTranslation as retryTranslationRequest,
   selectProfile,
   streamMessage,
-  updateChatParameters,
+  updateChatSettings,
   updateProfile,
   updateUserMessage,
 } from "./chatApi.ts";
 import {
   appendPendingTurn,
-  removePendingTurn,
   toSummary,
   updateAssistantMessage,
+  updateStage,
 } from "./chatState.ts";
 import { UI_TEXT } from "../../constants/ui.ts";
+
+type StreamProgress = {
+  userId: string;
+  assistantId: string;
+  content: string;
+  reasoning: string;
+};
+
+type OriginalInput = {
+  content: string;
+  attachments: ImageAttachment[];
+};
 
 export function useChatController() {
   const [chats, setChats] = useState<ChatSummary[]>([]);
@@ -45,6 +65,12 @@ export function useChatController() {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [busy, setBusy] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+  const [activeStage, setActiveStage] = useState<ChatStageKey | null>(null);
+  const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const [activeSourceMessageId, setActiveSourceMessageId] = useState<
+    string | null
+  >(null);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -60,13 +86,14 @@ export function useChatController() {
         listProfiles(),
         listModels(),
       ]);
-      const first = items[0] ? await getChat(items[0].id) : await createChat();
-      setChats(items[0] ? items : [toSummary(first)]);
+      setChats(items);
       setProfileCatalog(profiles);
       setModels(availableModels);
-      setChat(first);
+      setChat(items[0] ? await getChat(items[0].id) : null);
     } catch (cause) {
       showError(cause);
+    } finally {
+      setInitialized(true);
     }
   }
 
@@ -89,15 +116,18 @@ export function useChatController() {
     }
   }
 
-  async function addChat() {
-    if (busy) return;
+  async function addChat(mode: ChatMode): Promise<boolean> {
+    if (busy) return false;
     try {
-      const created = await createChat();
+      const created = await createChat(mode);
       setChat(created);
       setSidebarOpen(false);
+      setError("");
       await refreshChats();
+      return true;
     } catch (cause) {
       showError(cause);
+      return false;
     }
   }
 
@@ -106,24 +136,22 @@ export function useChatController() {
     try {
       await deleteChat(id);
       const items = await listChats();
-      if (chat?.id !== id) {
-        setChats(items);
-        setSidebarOpen(false);
-        return;
-      }
-      const next = items[0] ? await getChat(items[0].id) : await createChat();
-      setChat(next);
-      setChats(items[0] ? items : [toSummary(next)]);
+      setChats(items);
       setSidebarOpen(false);
+      if (chat?.id === id) {
+        setChat(items[0] ? await getChat(items[0].id) : null);
+      }
     } catch (cause) {
       showError(cause);
     }
   }
 
-  async function saveSettings() {
+  async function saveSettings(stage: ChatStageKey) {
     if (!chat || busy) return;
     try {
-      setChat(await updateChatParameters(chat.id, toParameters(chat.settings)));
+      const settings = chatStage(chat, stage)?.settings;
+      if (!settings) return;
+      setChat(await updateChatSettings(chat.id, stage, settings));
       setError("");
     } catch (cause) {
       showError(cause);
@@ -156,11 +184,19 @@ export function useChatController() {
     }
   }
 
-  async function chooseProfile(profileId: string) {
-    if (!chat || busy || profileId === chat.profileId) return;
+  async function chooseProfile(stage: ChatStageKey, profileId: string) {
+    if (
+      !chat ||
+      busy ||
+      chatStage(chat, stage)?.profileId === profileId
+    ) {
+      return;
+    }
     try {
-      setChat(await selectProfile(chat.id, profileId));
-      setProfileCatalog(await listProfiles());
+      setChat(await selectProfile(chat.id, stage, profileId));
+      if (stage === CHAT_STAGE.generation) {
+        setProfileCatalog(await listProfiles());
+      }
       setError("");
     } catch (cause) {
       showError(cause);
@@ -212,13 +248,17 @@ export function useChatController() {
     }
   }
 
-  function changeSetting<K extends keyof ChatParameters>(
+  function changeSetting<K extends keyof ChatSettings>(
+    stage: ChatStageKey,
     key: K,
-    value: ChatParameters[K],
+    value: ChatSettings[K],
   ) {
     setChat((current) =>
       current
-        ? { ...current, settings: { ...current.settings, [key]: value } }
+        ? updateStage(current, stage, (stageData) => ({
+            ...stageData,
+            settings: { ...stageData.settings, [key]: value },
+          }))
         : current,
     );
   }
@@ -227,146 +267,167 @@ export function useChatController() {
     const content = draft;
     const images = attachments;
     if (!chat || busy || (!content.trim() && images.length === 0)) return;
-
-    const chatId = chat.id;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setBusy(true);
     setDraft("");
     setAttachments([]);
+    await runStream(
+      chat.id,
+      (signal, onEvent) =>
+        streamMessage(chat.id, content, images, signal, onEvent),
+      { content, attachments: images },
+    );
+  }
+
+  async function retryTranslation(sourceMessageId: string) {
+    if (!chat || busy || chat.mode !== CHAT_MODE.translation) return;
+    await runStream(chat.id, (signal, onEvent) =>
+      retryTranslationRequest(
+        chat.id,
+        sourceMessageId,
+        signal,
+        onEvent,
+      ),
+    );
+  }
+
+  async function runStream(
+    chatId: string,
+    request: (
+      signal: AbortSignal,
+      onEvent: (event: StreamEvent) => void,
+    ) => Promise<void>,
+    original?: OriginalInput,
+  ) {
+    const controller = new AbortController();
+    const progress: Partial<Record<ChatStageKey, StreamProgress>> = {};
+    abortRef.current = controller;
+    setBusy(true);
     setError("");
 
-    let userId = "";
-    let assistantId = "";
-    let received = "";
-    let receivedReasoning = "";
-
     try {
-      await streamMessage(
-        chatId,
-        content,
-        images,
-        controller.signal,
-        (streamEvent) => {
-          if (streamEvent.type === "start") {
-            userId = streamEvent.userMessageId;
-            assistantId = streamEvent.assistantMessageId;
-            updateCurrentChat(chatId, (current) =>
-              appendPendingTurn(
-                current,
-                content,
-                images,
-                userId,
-                assistantId,
-                new Date().toISOString(),
-              ),
-            );
-          } else if (streamEvent.type === "delta") {
-            received += streamEvent.text;
-            updateAssistant(
-              chatId,
-              assistantId,
-              received,
-              receivedReasoning,
-              "complete",
-            );
-          } else if (streamEvent.type === "reasoning_delta") {
-            receivedReasoning += streamEvent.text;
-            updateAssistant(
-              chatId,
-              assistantId,
-              received,
-              receivedReasoning,
-              "complete",
-            );
-          } else if (streamEvent.type === "done") {
-            setChat((current) =>
-              current?.id === chatId ? streamEvent.chat : current,
-            );
-          } else {
-            handleStreamError(
-              streamEvent,
-              chatId,
-              userId,
-              assistantId,
-              content,
-              images,
-              received,
-              receivedReasoning,
-            );
-          }
-        },
-      );
+      await request(controller.signal, (event) => {
+        if (event.type === STREAM_EVENT.start) {
+          setActiveStage(event.stage);
+          setActiveMessageId(event.assistantMessageId);
+          setActiveSourceMessageId(
+            event.sourceMessageId ??
+              (event.stage === CHAT_STAGE.generation
+                ? event.assistantMessageId
+                : null),
+          );
+          const prompt =
+            event.stage === CHAT_STAGE.generation
+              ? original?.content ?? ""
+              : progress.generation?.content ??
+                sourceContent(chat, event.sourceMessageId);
+          progress[event.stage] = {
+            userId: event.userMessageId,
+            assistantId: event.assistantMessageId,
+            content: "",
+            reasoning: "",
+          };
+          updateCurrentChat(chatId, (current) =>
+            appendPendingTurn(
+              current,
+              event.stage,
+              prompt,
+              event.stage === CHAT_STAGE.generation
+                ? original?.attachments ?? []
+                : [],
+              event.userMessageId,
+              event.assistantMessageId,
+              new Date().toISOString(),
+              event.sourceMessageId,
+            ),
+          );
+        } else if (
+          event.type === STREAM_EVENT.delta ||
+          event.type === STREAM_EVENT.reasoningDelta
+        ) {
+          const current = progress[event.stage];
+          if (!current) return;
+          if (event.type === STREAM_EVENT.delta) current.content += event.text;
+          else current.reasoning += event.text;
+          updateAssistant(
+            chatId,
+            event.stage,
+            current,
+            MESSAGE_STATUS.complete,
+          );
+        } else if (event.type === STREAM_EVENT.done) {
+          setChat((current) =>
+            current?.id === chatId ? event.chat : current,
+          );
+        } else {
+          setError(event.message);
+          setChat((current) =>
+            current?.id === chatId ? event.chat : current,
+          );
+          restoreInputIfUnsaved(event.chat, progress.generation, original);
+        }
+      });
     } catch (cause) {
       const stopped = cause instanceof DOMException && cause.name === "AbortError";
-      if (received || receivedReasoning) {
-        updateAssistant(
-          chatId,
-          assistantId,
-          received,
-          receivedReasoning,
-          stopped ? "stopped" : "error",
-        );
-      } else {
-        removePending(chatId, userId, assistantId);
-        setDraft(content);
-        setAttachments(images);
+      try {
+        const latest = await getChat(chatId);
+        setChat((current) => (current?.id === chatId ? latest : current));
+        restoreInputIfUnsaved(latest, progress.generation, original);
+      } catch {
+        const stage = activeProgress(progress);
+        if (stage) {
+          updateAssistant(
+            chatId,
+            stage.key,
+            stage.value,
+            stopped ? MESSAGE_STATUS.stopped : MESSAGE_STATUS.error,
+          );
+        } else if (original) {
+          setDraft(original.content);
+          setAttachments(original.attachments);
+        }
       }
       if (!stopped) showError(cause);
     } finally {
       abortRef.current = null;
+      setActiveStage(null);
+      setActiveMessageId(null);
+      setActiveSourceMessageId(null);
       setBusy(false);
       await refreshChats();
     }
   }
 
-  function handleStreamError(
-    streamEvent: Extract<StreamEvent, { type: "error" }>,
-    chatId: string,
-    userId: string,
-    assistantId: string,
-    content: string,
-    attachments: ImageAttachment[],
-    received: string,
-    receivedReasoning: string,
+  function restoreInputIfUnsaved(
+    latest: Chat,
+    generation: StreamProgress | undefined,
+    original: OriginalInput | undefined,
   ) {
-    setError(streamEvent.message);
-    if (streamEvent.partialSaved) {
-      updateAssistant(
-        chatId,
-        assistantId,
-        received,
-        receivedReasoning,
-        "error",
-      );
-    } else {
-      removePending(chatId, userId, assistantId);
-      setDraft(content);
-      setAttachments(attachments);
+    if (
+      original &&
+      (!generation ||
+        !latest.stages.generation.messages.some(
+          (message) => message.id === generation.userId,
+        ))
+    ) {
+      setDraft(original.content);
+      setAttachments(original.attachments);
     }
   }
 
   function updateAssistant(
     chatId: string,
-    assistantId: string,
-    content: string,
-    reasoning: string,
+    stage: ChatStageKey,
+    progress: StreamProgress,
     status: MessageStatus,
   ) {
     updateCurrentChat(chatId, (current) =>
       updateAssistantMessage(
         current,
-        assistantId,
-        content,
-        reasoning,
+        stage,
+        progress.assistantId,
+        progress.content,
+        progress.reasoning,
         status,
       ),
-    );
-  }
-
-  function removePending(chatId: string, userId: string, assistantId: string) {
-    updateCurrentChat(chatId, (current) =>
-      removePendingTurn(current, userId, assistantId),
     );
   }
 
@@ -390,6 +451,10 @@ export function useChatController() {
     draft,
     attachments,
     busy,
+    initialized,
+    activeStage,
+    activeMessageId,
+    activeSourceMessageId,
     error,
     sidebarOpen,
     setDraft,
@@ -408,11 +473,37 @@ export function useChatController() {
     removeProfile,
     changeSetting,
     sendMessage,
+    retryTranslation,
     stopMessage: () => abortRef.current?.abort(),
   };
 }
 
-function toParameters(settings: ChatSettings): ChatParameters {
-  const { model, temperature, topP, maxTokens, reasoningEffort } = settings;
-  return { model, temperature, topP, maxTokens, reasoningEffort };
+function chatStage(chat: Chat, stage: ChatStageKey) {
+  return stage === CHAT_STAGE.generation
+    ? chat.stages.generation
+    : chat.mode === CHAT_MODE.translation
+      ? chat.stages.translation
+      : undefined;
+}
+
+function sourceContent(chat: Chat | null, sourceMessageId?: string) {
+  return (
+    chat?.stages.generation.messages.find(
+      (message) => message.id === sourceMessageId,
+    )?.content ?? ""
+  );
+}
+
+function activeProgress(
+  progress: Partial<Record<ChatStageKey, StreamProgress>>,
+) {
+  if (progress.translation) {
+    return {
+      key: CHAT_STAGE.translation,
+      value: progress.translation,
+    };
+  }
+  return progress.generation
+    ? { key: CHAT_STAGE.generation, value: progress.generation }
+    : null;
 }

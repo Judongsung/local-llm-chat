@@ -6,9 +6,14 @@ import type {
   ProfileCatalog,
 } from "../../../../shared/types/chat.ts";
 import { CHAT_LIMITS } from "../../../../shared/constants/chat.ts";
-import { UI_SYMBOLS, UI_TEXT } from "../../../constants/ui.ts";
-import { formatDeleteProfileConfirmation } from "../../../utils/formatUiText.ts";
+import {
+  UI_SYMBOLS,
+  UI_TEXT,
+  UI_TEXT_FORMATTERS,
+} from "../../../constants/ui.ts";
 import { ParameterFields } from "./ParameterFields.tsx";
+
+const SYSTEM_PROMPT_ROWS = 6;
 
 type Props = {
   catalog: ProfileCatalog;
@@ -97,7 +102,7 @@ export function ProfileSettingsDialog({
 
   async function remove() {
     if (
-      window.confirm(formatDeleteProfileConfirmation(draft.name)) &&
+      window.confirm(UI_TEXT_FORMATTERS.deleteProfileConfirmation(draft.name)) &&
       (await onDelete(selectedId))
     ) {
       setSelectedId(catalog.defaultProfileId);
@@ -164,7 +169,7 @@ export function ProfileSettingsDialog({
           <textarea
             value={draft.settings.systemPrompt}
             maxLength={CHAT_LIMITS.systemPrompt}
-            rows={6}
+            rows={SYSTEM_PROMPT_ROWS}
             disabled={busy}
             onChange={(event) =>
               changeSetting("systemPrompt", event.target.value)

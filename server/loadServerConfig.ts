@@ -6,7 +6,9 @@ import {
   DEFAULT_REASONING_EFFORT,
 } from "../shared/constants/chat.ts";
 import {
+  SERVER_CONFIG_ERROR_MESSAGES,
   SERVER_ENVIRONMENT_KEYS,
+  SERVER_FILE_ENCODING,
   SERVER_NETWORK_DEFAULTS,
   SERVER_PATHS,
 } from "../shared/constants/server.ts";
@@ -35,9 +37,7 @@ export function loadConfig(
     port < SERVER_NETWORK_DEFAULTS.portRange.min ||
     port > SERVER_NETWORK_DEFAULTS.portRange.max
   ) {
-    throw new Error(
-      `${SERVER_ENVIRONMENT_KEYS.port}는 ${SERVER_NETWORK_DEFAULTS.portRange.min}~${SERVER_NETWORK_DEFAULTS.portRange.max} 사이의 정수여야 합니다.`,
-    );
+    throw new Error(SERVER_CONFIG_ERROR_MESSAGES.invalidPort);
   }
   const models = loadModels(join(root, SERVER_PATHS.modelCatalog));
 
@@ -62,21 +62,17 @@ export function loadConfig(
 function loadModels(filePath: string): LlmModelConfig[] {
   let value: unknown;
   try {
-    value = JSON.parse(readFileSync(filePath, "utf8"));
+    value = JSON.parse(readFileSync(filePath, SERVER_FILE_ENCODING));
   } catch {
-    throw new Error(`${SERVER_PATHS.modelCatalog} 파일을 읽을 수 없습니다.`);
+    throw new Error(SERVER_CONFIG_ERROR_MESSAGES.modelFileUnreadable);
   }
   if (!Array.isArray(value) || value.length === 0) {
-    throw new Error(
-      `${SERVER_PATHS.modelCatalog}에는 모델 설정이 하나 이상 필요합니다.`,
-    );
+    throw new Error(SERVER_CONFIG_ERROR_MESSAGES.modelRequired);
   }
 
   const models = value.map((item, index) => parseModel(item, index));
   if (new Set(models.map(({ model }) => model)).size !== models.length) {
-    throw new Error(
-      `${SERVER_PATHS.modelCatalog}의 model 값은 중복될 수 없습니다.`,
-    );
+    throw new Error(SERVER_CONFIG_ERROR_MESSAGES.duplicateModel);
   }
   return models;
 }
@@ -92,9 +88,7 @@ function parseModel(value: unknown, index: number): LlmModelConfig {
     !value.model.trim() ||
     value.model.trim().length > CHAT_LIMITS.model
   ) {
-    throw new Error(
-      `${SERVER_PATHS.modelCatalog}의 ${index + 1}번째 설정이 올바르지 않습니다.`,
-    );
+    throw new Error(SERVER_CONFIG_ERROR_MESSAGES.invalidModel(index));
   }
 
   const baseUrl = value.baseUrl.trim();
@@ -102,14 +96,10 @@ function parseModel(value: unknown, index: number): LlmModelConfig {
   try {
     url = new URL(baseUrl);
   } catch {
-    throw new Error(
-      `${SERVER_PATHS.modelCatalog}의 ${index + 1}번째 URL이 올바르지 않습니다.`,
-    );
+    throw new Error(SERVER_CONFIG_ERROR_MESSAGES.invalidModelUrl(index));
   }
   if (!SUPPORTED_URL_PROTOCOLS.has(url.protocol)) {
-    throw new Error(
-      `${SERVER_PATHS.modelCatalog}의 URL은 HTTP 또는 HTTPS여야 합니다.`,
-    );
+    throw new Error(SERVER_CONFIG_ERROR_MESSAGES.unsupportedModelUrl);
   }
 
   return {

@@ -1,31 +1,33 @@
 import { Router, type Response } from "express";
 import type { StreamEvent } from "../../shared/types/chat.ts";
 import {
+  API_PATHS,
+  API_ROOT,
   HTTP_STATUS,
   SSE,
 } from "../../shared/constants/http.ts";
 import { SERVER_ERROR_MESSAGES } from "../../shared/constants/server.ts";
 import { ChatService } from "./chatService.ts";
 import {
-  parseChatParameters,
+  parseChatMode,
   parseChatSettings,
+  parseChatStage,
   parseMessageInput,
   parseProfileName,
   parsePrompt,
 } from "./chatValidation.ts";
 
-export const API_ROOT = "/api";
-
 const ROUTES = {
-  chats: `${API_ROOT}/chats`,
-  models: `${API_ROOT}/models`,
-  profiles: `${API_ROOT}/profiles`,
-  profile: `${API_ROOT}/profiles/:id`,
-  chatProfile: `${API_ROOT}/chats/:id/profile`,
-  chatSettings: `${API_ROOT}/chats/:id/settings`,
-  chat: `${API_ROOT}/chats/:id`,
-  message: `${API_ROOT}/chats/:id/messages/:messageId`,
-  messages: `${API_ROOT}/chats/:id/messages`,
+  chats: API_PATHS.chats,
+  models: API_PATHS.models,
+  profiles: API_PATHS.profiles,
+  profile: `${API_PATHS.profiles}/:id`,
+  stageProfile: `${API_PATHS.chats}/:id/stages/:stage/profile`,
+  stageSettings: `${API_PATHS.chats}/:id/stages/:stage/settings`,
+  chat: `${API_PATHS.chats}/:id`,
+  message: `${API_PATHS.chats}/:id/messages/:messageId`,
+  messages: `${API_PATHS.chats}/:id/messages`,
+  retryTranslation: `${API_PATHS.chats}/:id/messages/:messageId/translation`,
 } as const;
 const RESPONSE_CLOSE_EVENT = "close";
 
@@ -41,8 +43,14 @@ export function createChatRouter(service: ChatService, models: string[]) {
     response.json(models);
   });
 
-  router.post(ROUTES.chats, async (_request, response) => {
-    response.status(HTTP_STATUS.created).json(await service.createChat());
+  router.post(ROUTES.chats, async (request, response) => {
+    const mode = parseChatMode(request.body?.mode);
+    if (!mode) {
+      return response.status(HTTP_STATUS.badRequest).json({
+        error: SERVER_ERROR_MESSAGES.invalidChatMode,
+      });
+    }
+    response.status(HTTP_STATUS.created).json(await service.createChat(mode));
   });
 
   router.get(ROUTES.profiles, (_request, response) => {
@@ -80,26 +88,36 @@ export function createChatRouter(service: ChatService, models: string[]) {
     response.status(HTTP_STATUS.noContent).end();
   });
 
-  router.put(ROUTES.chatProfile, async (request, response) => {
-    if (typeof request.body?.profileId !== "string") {
+  router.put(ROUTES.stageProfile, async (request, response) => {
+    const stage = parseChatStage(request.params.stage);
+    if (!stage || typeof request.body?.profileId !== "string") {
       return response.status(HTTP_STATUS.badRequest).json({
-        error: SERVER_ERROR_MESSAGES.invalidProfileId,
+        error: stage
+          ? SERVER_ERROR_MESSAGES.invalidProfileId
+          : SERVER_ERROR_MESSAGES.invalidChatStage,
       });
     }
     response.json(
-      await service.selectProfile(request.params.id, request.body.profileId),
+      await service.selectProfile(
+        request.params.id,
+        stage,
+        request.body.profileId,
+      ),
     );
   });
 
-  router.patch(ROUTES.chatSettings, async (request, response) => {
-    const parameters = parseChatParameters(request.body);
-    if (!parameters || !availableModels.has(parameters.model)) {
+  router.patch(ROUTES.stageSettings, async (request, response) => {
+    const stage = parseChatStage(request.params.stage);
+    const settings = parseChatSettings(request.body);
+    if (!stage || !settings || !availableModels.has(settings.model)) {
       return response.status(HTTP_STATUS.badRequest).json({
-        error: SERVER_ERROR_MESSAGES.invalidParameters,
+        error: stage
+          ? SERVER_ERROR_MESSAGES.invalidParameters
+          : SERVER_ERROR_MESSAGES.invalidChatStage,
       });
     }
     response.json(
-      await service.updateChatParameters(request.params.id, parameters),
+      await service.updateChatSettings(request.params.id, stage, settings),
     );
   });
 
@@ -152,12 +170,38 @@ export function createChatRouter(service: ChatService, models: string[]) {
     }
 
     const abortController = new AbortController();
-    const events = service.streamMessage(
-      request.params.id,
-      message,
-      abortController.signal,
+    await stream(
+      response,
+      service.streamMessage(
+        request.params.id,
+        message,
+        abortController.signal,
+      ),
+      abortController,
     );
+  });
 
+  router.post(ROUTES.retryTranslation, async (request, response) => {
+    const abortController = new AbortController();
+    await stream(
+      response,
+      service.retryTranslation(
+        request.params.id,
+        request.params.messageId,
+        abortController.signal,
+      ),
+      abortController,
+    );
+  });
+
+  return router;
+}
+
+async function stream(
+  response: Response,
+  events: AsyncIterable<StreamEvent>,
+  abortController: AbortController,
+) {
     response.status(HTTP_STATUS.ok);
     response.set(SSE.headers);
     response.flushHeaders();
@@ -170,9 +214,6 @@ export function createChatRouter(service: ChatService, models: string[]) {
     for await (const event of events) send(response, event);
     responseFinished = true;
     response.end();
-  });
-
-  return router;
 }
 
 function send(response: Response, event: StreamEvent) {

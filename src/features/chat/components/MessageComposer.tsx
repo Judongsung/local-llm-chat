@@ -2,12 +2,27 @@ import type { ChangeEvent, FormEvent } from "react";
 import {
   CHAT_LIMITS,
   IMAGE_MIME_TYPES,
+  NORMALIZED_IMAGE_MIME_TYPE,
 } from "../../../../shared/constants/chat.ts";
 import type { ImageAttachment } from "../../../../shared/types/chat.ts";
 import { UI_TEXT } from "../../../constants/ui.ts";
 
-const OUTPUT_IMAGE_TYPE = "image/jpeg";
+const OUTPUT_IMAGE_TYPE = NORMALIZED_IMAGE_MIME_TYPE;
 const OUTPUT_IMAGE_EXTENSION = ".jpg";
+const OUTPUT_IMAGE_FALLBACK_NAME = "image";
+const CANVAS_ELEMENT_NAME = "canvas";
+const CANVAS_CONTEXT_TYPE = "2d";
+const LOAD_EVENT = "load";
+const ERROR_EVENT = "error";
+const COMPOSER_TEXTAREA_ROWS = 3;
+const RANDOM_ID_RADIX = 36;
+const RANDOM_ID_PREFIX_LENGTH = 2;
+const IMAGE_PROCESSING_ERRORS = {
+  canvasUnavailable: "canvas unavailable",
+  imageTooLarge: "image too large",
+  imageLoadFailed: "image load failed",
+  imageEncodeFailed: "image encode failed",
+} as const;
 
 type Props = {
   draft: string;
@@ -91,7 +106,7 @@ export function MessageComposer({
           value={draft}
           onChange={(event) => onDraftChange(event.target.value)}
           placeholder={UI_TEXT.composer.placeholder}
-          rows={3}
+          rows={COMPOSER_TEXTAREA_ROWS}
           maxLength={CHAT_LIMITS.message}
           disabled={disabled || busy}
           aria-label={UI_TEXT.composer.message}
@@ -145,11 +160,11 @@ async function normalizeImage(file: File) {
     CHAT_LIMITS.attachments.maxDimension /
       Math.max(image.naturalWidth, image.naturalHeight),
   );
-  const canvas = document.createElement("canvas");
+  const canvas = document.createElement(CANVAS_ELEMENT_NAME);
   canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
   canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("canvas unavailable");
+  const context = canvas.getContext(CANVAS_CONTEXT_TYPE);
+  if (!context) throw new Error(IMAGE_PROCESSING_ERRORS.canvasUnavailable);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
   for (const quality of CHAT_LIMITS.attachments.jpegQualities) {
@@ -161,20 +176,20 @@ async function normalizeImage(file: File) {
       };
     }
   }
-  throw new Error("image too large");
+  throw new Error(IMAGE_PROCESSING_ERRORS.imageTooLarge);
 }
 
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
     const url = URL.createObjectURL(file);
-    image.addEventListener("load", () => {
+    image.addEventListener(LOAD_EVENT, () => {
       URL.revokeObjectURL(url);
       resolve(image);
     });
-    image.addEventListener("error", () => {
+    image.addEventListener(ERROR_EVENT, () => {
       URL.revokeObjectURL(url);
-      reject(new Error("image load failed"));
+      reject(new Error(IMAGE_PROCESSING_ERRORS.imageLoadFailed));
     });
     image.src = url;
   });
@@ -186,7 +201,10 @@ function canvasToBlob(
 ): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
-      (blob) => blob ? resolve(blob) : reject(new Error("image encode failed")),
+      (blob) =>
+        blob
+          ? resolve(blob)
+          : reject(new Error(IMAGE_PROCESSING_ERRORS.imageEncodeFailed)),
       OUTPUT_IMAGE_TYPE,
       quality,
     );
@@ -196,17 +214,21 @@ function canvasToBlob(
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.addEventListener("load", () => resolve(String(reader.result)));
-    reader.addEventListener("error", () => reject(reader.error));
+    reader.addEventListener(LOAD_EVENT, () => resolve(String(reader.result)));
+    reader.addEventListener(ERROR_EVENT, () => reject(reader.error));
     reader.readAsDataURL(blob);
   });
 }
 
 function outputName(name: string) {
-  return `${name.replace(/\.[^.]*$/, "") || "image"}${OUTPUT_IMAGE_EXTENSION}`;
+  return `${
+    name.replace(/\.[^.]*$/, "") || OUTPUT_IMAGE_FALLBACK_NAME
+  }${OUTPUT_IMAGE_EXTENSION}`;
 }
 
 function createAttachmentId() {
   return globalThis.crypto?.randomUUID?.() ??
-    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    `${Date.now()}-${Math.random()
+      .toString(RANDOM_ID_RADIX)
+      .slice(RANDOM_ID_PREFIX_LENGTH)}`;
 }

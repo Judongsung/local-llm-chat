@@ -7,7 +7,7 @@
   color: var(--accent);
 }
 
-.settings[open] form {
+.settings[open] .settings-panel {
   position: absolute;
   z-index: 10;
   top: 2.2rem;
@@ -24,14 +24,26 @@
   box-shadow: 0 18px 55px rgb(0 0 0 / 35%);
 }
 
+.settings-panel,
 .settings form,
 .settings label {
   display: grid;
   gap: 0.45rem;
 }
 
+.settings-panel,
 .settings form {
   gap: 0.9rem;
+}
+
+.settings form + form {
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.settings h3 {
+  margin: 0;
+  font-size: 0.95rem;
 }
 
 .settings label {
@@ -110,7 +122,41 @@
 }
 
 .danger-button {
-  background: #9b3d3d;
+  background: var(--danger-button-background);
+}
+
+.chat-type-dialog {
+  padding: 1rem;
+}
+
+.chat-type-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.chat-type-dialog header p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.chat-type-options {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.chat-type-options button {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  text-align: left;
+}
+
+.chat-type-options span {
+  color: inherit;
+  font-size: 0.85rem;
+  opacity: 0.8;
 }
 
 @media (max-width: 760px) {

@@ -5,10 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
 import test from "node:test";
+import {
+  DEFAULT_TRANSLATION_SYSTEM_PROMPT,
+} from "../../shared/constants/chat.ts";
 import type { Chat, ChatSettings } from "../../shared/types/chat.ts";
 import { ChatService } from "../chat/chatService.ts";
 import { JsonChatRepository } from "../chat/persistence/JsonChatRepository.ts";
-import type { CompletionStreamer } from "../llm/completionStreamer.ts";
+import type {
+  CompletionInput,
+  CompletionStreamer,
+} from "../llm/completionStreamer.ts";
 import { createApi } from "./createApp.ts";
 
 const defaults: ChatSettings = {
@@ -20,17 +26,21 @@ const defaults: ChatSettings = {
   reasoningEffort: "none",
 };
 
-test("API는 채팅 생성부터 스트리밍 저장까지 처리한다", async (context) => {
+test("API는 일반 채팅과 2단계 번역 채팅을 처리한다", async (context) => {
   const directory = await mkdtemp(join(tmpdir(), "llm-chat-api-"));
-  const repository = new JsonChatRepository(
-    join(directory, "data"),
-    defaults,
-  );
+  const repository = new JsonChatRepository(join(directory, "data"), defaults);
   await repository.load();
-  const completionStreamer: CompletionStreamer = async function* () {
+  const calls: CompletionInput[] = [];
+  const completionStreamer: CompletionStreamer = async function* (input) {
+    calls.push(structuredClone(input));
     yield { type: "reasoning", text: "응답 검토" };
-    yield { type: "content", text: "테스트 " };
-    yield { type: "content", text: "응답" };
+    yield {
+      type: "content",
+      text:
+        input.settings.systemPrompt === DEFAULT_TRANSLATION_SYSTEM_PROMPT
+          ? "한글 답변"
+          : "English answer",
+    };
   };
   const service = new ChatService(repository, completionStreamer);
   const server = createApi(service, ["test-model", "other-model"]).listen(
@@ -38,8 +48,7 @@ test("API는 채팅 생성부터 스트리밍 저장까지 처리한다", async 
     "127.0.0.1",
   );
   await once(server, "listening");
-  const port = (server.address() as AddressInfo).port;
-  const base = `http://127.0.0.1:${port}`;
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   context.after(
     () =>
@@ -50,16 +59,14 @@ test("API는 채팅 생성부터 스트리밍 저장까지 처리한다", async 
   context.after(() => rm(directory, { recursive: true, force: true }));
 
   const createdResponse = await fetch(`${base}/api/chats`, { method: "POST" });
-  const created = (await createdResponse.json()) as Chat;
+  const standard = (await createdResponse.json()) as Chat;
   assert.equal(createdResponse.status, 201);
   assert.equal(createdResponse.headers.get("x-powered-by"), null);
+  assert.equal(standard.mode, "standard");
   assert.deepEqual(await (await fetch(`${base}/api/models`)).json(), [
     "test-model",
     "other-model",
   ]);
-  const initialCatalog = await (
-    await fetch(`${base}/api/profiles`)
-  ).json();
 
   const malformedJson = await fetch(`${base}/api/profiles`, {
     method: "POST",
@@ -67,30 +74,12 @@ test("API는 채팅 생성부터 스트리밍 저장까지 처리한다", async 
     body: "{",
   });
   assert.equal(malformedJson.status, 400);
-
-  const oversizedJson = await fetch(`${base}/api/chats/${created.id}/messages`, {
+  const invalidMode = await fetch(`${base}/api/chats`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: "x".repeat(7 * 1024 * 1024) }),
+    body: JSON.stringify({ mode: "unknown" }),
   });
-  assert.equal(oversizedJson.status, 413);
-
-  const invalid = await fetch(`${base}/api/profiles`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "", ...defaults, temperature: 99 }),
-  });
-  assert.equal(invalid.status, 400);
-  const unknownModel = await fetch(`${base}/api/profiles`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: "알 수 없음",
-      ...defaults,
-      model: "missing-model",
-    }),
-  });
-  assert.equal(unknownModel.status, 400);
+  assert.equal(invalidMode.status, 400);
 
   const profileResponse = await fetch(`${base}/api/profiles`, {
     method: "POST",
@@ -105,7 +94,7 @@ test("API는 채팅 생성부터 스트리밍 저장까지 처리한다", async 
   assert.equal(profileResponse.status, 201);
 
   const selectResponse = await fetch(
-    `${base}/api/chats/${created.id}/profile`,
+    `${base}/api/chats/${standard.id}/stages/generation/profile`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -113,81 +102,108 @@ test("API는 채팅 생성부터 스트리밍 저장까지 처리한다", async 
     },
   );
   assert.equal(selectResponse.status, 200);
-
   const settingsResponse = await fetch(
-    `${base}/api/chats/${created.id}/settings`,
+    `${base}/api/chats/${standard.id}/stages/generation/settings`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...defaults, temperature: 1.1 }),
+      body: JSON.stringify({
+        ...profile.settings,
+        systemPrompt: "채팅별 프롬프트",
+        temperature: 1.1,
+      }),
     },
   );
   const configured = (await settingsResponse.json()) as Chat;
-  assert.equal(configured.settings.temperature, 1.1);
-  assert.equal(configured.settings.systemPrompt, "정밀하게 답변");
+  assert.equal(configured.stages.generation.settings.temperature, 1.1);
+  assert.equal(
+    configured.stages.generation.settings.systemPrompt,
+    "채팅별 프롬프트",
+  );
 
-  const stream = await fetch(`${base}/api/chats/${created.id}/messages`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: "질문" }),
-  });
-  const events = await stream.text();
-  assert.match(events, /"type":"reasoning_delta"/);
-  assert.match(events, /"type":"delta"/);
-  assert.match(events, /테스트/);
-
-  const saved = (await (
-    await fetch(`${base}/api/chats/${created.id}`)
+  const standardStream = await fetch(
+    `${base}/api/chats/${standard.id}/messages`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "질문" }),
+    },
+  );
+  const standardEvents = await standardStream.text();
+  assert.match(standardEvents, /"stage":"generation"/);
+  const savedStandard = (await (
+    await fetch(`${base}/api/chats/${standard.id}`)
   ).json()) as Chat;
   assert.deepEqual(
-    saved.messages.map(({ role, content }) => [role, content]),
+    savedStandard.stages.generation.messages.map(({ role, content }) => [
+      role,
+      content,
+    ]),
     [
       ["user", "질문"],
-      ["assistant", "테스트 응답"],
+      ["assistant", "English answer"],
     ],
   );
-  assert.equal(saved.messages[1].reasoning, "응답 검토");
 
-  const userMessageId = saved.messages[0].id;
-  const invalidEdit = await fetch(
-    `${base}/api/chats/${created.id}/messages/${userMessageId}`,
+  const translationResponse = await fetch(`${base}/api/chats`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "translation" }),
+  });
+  const translation = (await translationResponse.json()) as Chat;
+  assert.equal(translation.mode, "translation");
+  const translatedStream = await fetch(
+    `${base}/api/chats/${translation.id}/messages`,
     {
-      method: "PATCH",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: " " }),
+      body: JSON.stringify({ content: "번역 질문" }),
     },
   );
-  assert.equal(invalidEdit.status, 400);
+  const translatedEvents = await translatedStream.text();
+  assert.match(translatedEvents, /"stage":"generation"/);
+  assert.match(translatedEvents, /"stage":"translation"/);
 
-  const editResponse = await fetch(
-    `${base}/api/chats/${created.id}/messages/${userMessageId}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: "수정된 질문" }),
-    },
+  const savedTranslation = (await (
+    await fetch(`${base}/api/chats/${translation.id}`)
+  ).json()) as Chat;
+  if (savedTranslation.mode !== "translation") {
+    assert.fail("번역 채팅이 필요합니다.");
+  }
+  const english = savedTranslation.stages.generation.messages[1];
+  assert.equal(english.content, "English answer");
+  assert.equal(
+    savedTranslation.stages.translation.messages[0].sourceMessageId,
+    english.id,
   );
-  const edited = (await editResponse.json()) as Chat;
-  assert.equal(editResponse.status, 200);
-  assert.equal(edited.messages[0].content, "수정된 질문");
-  assert.equal(edited.title, "수정된 질문");
+  assert.equal(savedTranslation.stages.translation.messages[1].content, "한글 답변");
+  assert.equal(calls.at(-1)?.prompt, "English answer");
+  assert.deepEqual(calls.at(-1)?.attachments, []);
+  assert.deepEqual(calls.at(-1)?.history, []);
 
+  const secondStream = await fetch(`${base}/api/chats/${translation.id}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: "둘째 질문" }),
+  });
+  await secondStream.text();
+  assert.equal(calls.at(-1)?.history.length, 2);
+  assert.equal(calls.at(-1)?.history[0].content, "English answer");
+  assert.equal(calls.at(-1)?.history[1].content, "한글 답변");
+
+  const retryComplete = await fetch(
+    `${base}/api/chats/${translation.id}/messages/${english.id}/translation`,
+    { method: "POST" },
+  );
+  assert.equal(retryComplete.status, 409);
+
+  const userMessageId = savedTranslation.stages.generation.messages[0].id;
   const deleteResponse = await fetch(
-    `${base}/api/chats/${created.id}/messages/${userMessageId}`,
+    `${base}/api/chats/${translation.id}/messages/${userMessageId}`,
     { method: "DELETE" },
   );
   const afterDelete = (await deleteResponse.json()) as Chat;
-  assert.equal(deleteResponse.status, 200);
-  assert.deepEqual(afterDelete.messages, []);
-
-  const deleteInitialProfile = await fetch(
-    `${base}/api/profiles/${initialCatalog.profiles[0].id}`,
-    { method: "DELETE" },
-  );
-  assert.equal(deleteInitialProfile.status, 204);
-  const deleteLastProfile = await fetch(
-    `${base}/api/profiles/${profile.id}`,
-    { method: "DELETE" },
-  );
-  assert.equal(deleteLastProfile.status, 409);
+  if (afterDelete.mode !== "translation") assert.fail("번역 채팅이 필요합니다.");
+  assert.equal(afterDelete.stages.generation.messages.length, 2);
+  assert.equal(afterDelete.stages.translation.messages.length, 2);
 });

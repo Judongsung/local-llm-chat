@@ -4,8 +4,8 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.65rem 1.25rem;
-  color: #ffd3d3;
-  background: #582828;
+  color: var(--error-text);
+  background: var(--error-background);
 }
 
 .error-banner button {
@@ -32,8 +32,8 @@
 
 .message.user {
   margin-left: auto;
-  border-color: #415a99;
-  background: #23345e;
+  border-color: var(--user-message-border);
+  background: var(--user-message-background);
 }
 
 .message.assistant {
@@ -114,6 +114,25 @@
   padding: 0 0.75rem 0.75rem;
   color: var(--text);
   font-size: 0.9rem;
+}
+
+.message-original {
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.message-original > summary {
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.message-original-content {
+  padding: 0 0.75rem 0.75rem;
+  color: var(--text);
 }
 
 .message.assistant .message-content > :first-child {
@@ -242,19 +261,7 @@
 }
 
 .stop-button {
-  background: #9b3d3d;
-}
-
-@media (prefers-color-scheme: light) {
-  .message.user {
-    border-color: #b9c9f5;
-    background: #dce6ff;
-  }
-
-  .error-banner {
-    color: #751f1f;
-    background: #ffe0e0;
-  }
+  background: var(--danger-button-background);
 }
 
 @media (max-width: 760px) {

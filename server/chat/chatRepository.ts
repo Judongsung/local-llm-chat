@@ -1,7 +1,8 @@
 import type {
   Chat,
-  ChatParameters,
+  ChatMode,
   ChatSettings,
+  ChatStageKey,
   ChatSummary,
   Message,
   ParameterProfile,
@@ -12,7 +13,7 @@ export interface ChatRepository {
   list(): ChatSummary[];
   get(id: string): Chat | null;
   listProfiles(): ProfileCatalog;
-  create(): Promise<Chat>;
+  create(mode?: ChatMode): Promise<Chat>;
   createProfile(
     name: string,
     settings: ChatSettings,
@@ -23,10 +24,15 @@ export interface ChatRepository {
     settings: ChatSettings,
   ): Promise<ParameterProfile | null>;
   deleteProfile(id: string): Promise<ParameterProfile | null>;
-  selectProfile(chatId: string, profileId: string): Promise<Chat | null>;
-  updateChatParameters(
+  selectProfile(
     chatId: string,
-    parameters: ChatParameters,
+    stage: ChatStageKey,
+    profileId: string,
+  ): Promise<Chat | null>;
+  updateChatSettings(
+    chatId: string,
+    stage: ChatStageKey,
+    settings: ChatSettings,
   ): Promise<Chat | null>;
   delete(id: string): Promise<boolean>;
   updateUserMessage(
@@ -37,6 +43,13 @@ export interface ChatRepository {
   deleteTurn(chatId: string, messageId: string): Promise<Chat | null>;
   appendTurn(
     id: string,
+    stage: ChatStageKey,
+    user: Message,
+    assistant: Message,
+  ): Promise<Chat | null>;
+  upsertTranslationTurn(
+    id: string,
+    sourceMessageId: string,
     user: Message,
     assistant: Message,
   ): Promise<Chat | null>;

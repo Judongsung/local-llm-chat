@@ -1,6 +1,8 @@
 :root {
-  color: #e8eaf0;
-  background: #101217;
+  --text: #e8eaf0;
+  --app-background: #101217;
+  --field-background: #101319;
+  --button-text: #ffffff;
   font-family:
     Inter, Pretendard, "Noto Sans KR", system-ui, -apple-system, sans-serif;
   font-synthesis: none;
@@ -11,6 +13,14 @@
   --accent: #7c9cff;
   --accent-strong: #5d7ee8;
   --danger: #ff8181;
+  --danger-button-background: #9b3d3d;
+  --error-text: #ffd3d3;
+  --error-background: #582828;
+  --user-message-border: #415a99;
+  --user-message-background: #23345e;
+  --header-background: rgba(23, 26, 33, 0.96);
+  color: var(--text);
+  background: var(--app-background);
 }
 
 * {
@@ -40,7 +50,7 @@ button {
   border: 1px solid transparent;
   border-radius: 8px;
   padding: 0.65rem 0.9rem;
-  color: white;
+  color: var(--button-text);
   background: var(--accent-strong);
   cursor: pointer;
 }
@@ -62,7 +72,7 @@ textarea {
   border-radius: 8px;
   padding: 0.65rem 0.75rem;
   color: inherit;
-  background: #101319;
+  background: var(--field-background);
 }
 
 textarea {
@@ -80,8 +90,9 @@ summary:focus-visible {
 
 @media (prefers-color-scheme: light) {
   :root {
-    color: #1d2430;
-    background: #f7f8fb;
+    --text: #1d2430;
+    --app-background: #f7f8fb;
+    --field-background: #f7f8fb;
     --panel: #ffffff;
     --panel-strong: #f0f3f9;
     --line: #d9deea;
@@ -89,10 +100,15 @@ summary:focus-visible {
     --accent: #365fd8;
     --accent-strong: #365fd8;
     --danger: #b32828;
+    --error-text: #751f1f;
+    --error-background: #ffe0e0;
+    --user-message-border: #b9c9f5;
+    --user-message-background: #dce6ff;
+    --header-background: rgba(255, 255, 255, 0.96);
   }
 
   input,
   textarea {
-    background: #f7f8fb;
+    background: var(--field-background);
   }
 }

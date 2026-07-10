@@ -1,12 +1,13 @@
 import express from "express";
-import { API_ROOT, createChatRouter } from "../chat/chatRouter.ts";
+import { createChatRouter } from "../chat/chatRouter.ts";
 import {
   ChatBusyError,
   ChatNotFoundError,
   ChatService,
   ProfileConflictError,
+  TranslationConflictError,
 } from "../chat/chatService.ts";
-import { HTTP_STATUS } from "../../shared/constants/http.ts";
+import { API_ROOT, HTTP_STATUS } from "../../shared/constants/http.ts";
 import {
   SERVER_ERROR_MESSAGES,
   SERVER_EXPRESS_SETTINGS,
@@ -50,7 +51,8 @@ export function createApi(service: ChatService, models: string[]) {
       }
       if (
         error instanceof ChatBusyError ||
-        error instanceof ProfileConflictError
+        error instanceof ProfileConflictError ||
+        error instanceof TranslationConflictError
       ) {
         return response
           .status(HTTP_STATUS.conflict)

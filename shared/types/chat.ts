@@ -1,5 +1,19 @@
-export type MessageStatus = "complete" | "stopped" | "error";
-export type ReasoningEffort = "none" | "low" | "medium" | "high";
+import type {
+  CHAT_MODE,
+  CHAT_STAGE,
+  MESSAGE_ROLE,
+  MESSAGE_STATUS,
+  REASONING_EFFORT,
+  STREAM_EVENT,
+} from "../constants/chat.ts";
+
+type ValueOf<T> = T[keyof T];
+
+export type MessageStatus = ValueOf<typeof MESSAGE_STATUS>;
+export type ReasoningEffort = ValueOf<typeof REASONING_EFFORT>;
+export type ChatMode = ValueOf<typeof CHAT_MODE>;
+export type ChatStageKey = ValueOf<typeof CHAT_STAGE>;
+export type MessageRole = ValueOf<typeof MESSAGE_ROLE>;
 
 export type ImageAttachment = {
   id: string;
@@ -16,8 +30,9 @@ export type MessageInput = {
 
 export type Message = {
   id: string;
-  role: "user" | "assistant";
+  role: MessageRole;
   content: string;
+  sourceMessageId?: string;
   attachments?: ImageAttachment[];
   reasoning?: string;
   createdAt: string;
@@ -34,7 +49,7 @@ export type ChatSettings = {
 };
 
 export type ChatParameters = Omit<ChatSettings, "systemPrompt">;
-export type ChatSettingsOverrides = Partial<ChatParameters>;
+export type ChatSettingsOverrides = Partial<ChatSettings>;
 
 export type ParameterProfile = {
   id: string;
@@ -47,29 +62,55 @@ export type ProfileCatalog = {
   profiles: ParameterProfile[];
 };
 
-export type Chat = {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
+export type ChatStage = {
   profileId: string;
   profileFallback: boolean;
   settings: ChatSettings;
   messages: Message[];
 };
 
+type ChatBase = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StandardChat = ChatBase & {
+  mode: typeof CHAT_MODE.standard;
+  stages: { generation: ChatStage };
+};
+
+export type TranslationChat = ChatBase & {
+  mode: typeof CHAT_MODE.translation;
+  stages: { generation: ChatStage; translation: ChatStage };
+};
+
+export type Chat = StandardChat | TranslationChat;
+
 export type ChatSummary = Pick<
   Chat,
-  "id" | "title" | "createdAt" | "updatedAt"
+  "id" | "title" | "createdAt" | "updatedAt" | "mode"
 >;
 
 export type StreamEvent =
   | {
-      type: "start";
+      type: typeof STREAM_EVENT.start;
+      stage: ChatStageKey;
       userMessageId: string;
       assistantMessageId: string;
+      sourceMessageId?: string;
     }
-  | { type: "delta"; text: string }
-  | { type: "reasoning_delta"; text: string }
-  | { type: "done"; chat: Chat }
-  | { type: "error"; message: string; partialSaved: boolean };
+  | { type: typeof STREAM_EVENT.delta; stage: ChatStageKey; text: string }
+  | {
+      type: typeof STREAM_EVENT.reasoningDelta;
+      stage: ChatStageKey;
+      text: string;
+    }
+  | { type: typeof STREAM_EVENT.done; chat: Chat }
+  | {
+      type: typeof STREAM_EVENT.error;
+      stage: ChatStageKey;
+      message: string;
+      chat: Chat;
+    };

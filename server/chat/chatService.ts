@@ -1,22 +1,38 @@
 import { randomUUID } from "node:crypto";
 import type {
   Chat,
-  ChatParameters,
+  ChatMode,
   ChatSettings,
+  ChatStage,
+  ChatStageKey,
   ChatSummary,
+  ImageAttachment,
   Message,
   MessageInput,
   ParameterProfile,
   ProfileCatalog,
   StreamEvent,
 } from "../../shared/types/chat.ts";
+import {
+  CHAT_MODE,
+  CHAT_STAGE,
+  MESSAGE_ROLE,
+  MESSAGE_STATUS,
+  STREAM_EVENT,
+} from "../../shared/constants/chat.ts";
 import { SERVER_ERROR_MESSAGES } from "../../shared/constants/server.ts";
-import type { CompletionStreamer } from "../llm/completionStreamer.ts";
+import {
+  COMPLETION_CHUNK_TYPE,
+  type CompletionStreamer,
+} from "../llm/completionStreamer.ts";
 import type { ChatRepository } from "./chatRepository.ts";
 
 export class ChatNotFoundError extends Error {}
 export class ChatBusyError extends Error {}
 export class ProfileConflictError extends Error {}
+export class TranslationConflictError extends Error {}
+
+type StageResult = { assistant: Message; chat: Chat };
 
 export class ChatService {
   private readonly activeChats = new Set<string>();
@@ -35,8 +51,8 @@ export class ChatService {
     return this.repository.list();
   }
 
-  createChat(): Promise<Chat> {
-    return this.repository.create();
+  createChat(mode: ChatMode = CHAT_MODE.standard): Promise<Chat> {
+    return this.repository.create(mode);
   }
 
   getChat(id: string): Chat {
@@ -81,24 +97,37 @@ export class ChatService {
     await this.repository.deleteProfile(id);
   }
 
-  async selectProfile(chatId: string, profileId: string): Promise<Chat> {
+  async selectProfile(
+    chatId: string,
+    stage: ChatStageKey,
+    profileId: string,
+  ): Promise<Chat> {
     this.ensureIdle(chatId, SERVER_ERROR_MESSAGES.busyProfile);
-    if (!this.repository.listProfiles().profiles.some(
-      (profile) => profile.id === profileId,
-    )) {
+    this.ensureStage(this.getChat(chatId), stage);
+    if (
+      !this.repository
+        .listProfiles()
+        .profiles.some((profile) => profile.id === profileId)
+    ) {
       throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.profileNotFound);
     }
-    const chat = await this.repository.selectProfile(chatId, profileId);
+    const chat = await this.repository.selectProfile(chatId, stage, profileId);
     if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
     return chat;
   }
 
-  async updateChatParameters(
+  async updateChatSettings(
     chatId: string,
-    parameters: ChatParameters,
+    stage: ChatStageKey,
+    settings: ChatSettings,
   ): Promise<Chat> {
     this.ensureIdle(chatId, SERVER_ERROR_MESSAGES.busySettings);
-    const chat = await this.repository.updateChatParameters(chatId, parameters);
+    this.ensureStage(this.getChat(chatId), stage);
+    const chat = await this.repository.updateChatSettings(
+      chatId,
+      stage,
+      settings,
+    );
     if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
     return chat;
   }
@@ -139,94 +168,235 @@ export class ChatService {
     input: MessageInput,
     signal: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
-    const chat = this.repository.get(chatId);
-    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
-    if (this.activeChats.has(chatId)) {
-      throw new ChatBusyError(SERVER_ERROR_MESSAGES.busy);
+    const chat = this.getChat(chatId);
+    this.begin(chatId);
+    return this.generate(chat.mode, chatId, input, signal);
+  }
+
+  retryTranslation(
+    chatId: string,
+    sourceMessageId: string,
+    signal: AbortSignal,
+  ): AsyncGenerator<StreamEvent> {
+    const chat = this.getChat(chatId);
+    if (chat.mode !== CHAT_MODE.translation) {
+      throw new ChatNotFoundError(
+        SERVER_ERROR_MESSAGES.translationNotAvailable,
+      );
     }
-    this.activeChats.add(chatId);
-    return this.generate(chat, input, signal);
+    const source = chat.stages.generation.messages.find(
+      (message) =>
+        message.id === sourceMessageId &&
+        message.role === MESSAGE_ROLE.assistant &&
+        message.status === MESSAGE_STATUS.complete &&
+        Boolean(message.content),
+    );
+    if (!source) {
+      throw new ChatNotFoundError(
+        SERVER_ERROR_MESSAGES.translationNotAvailable,
+      );
+    }
+    const existingIndex = chat.stages.translation.messages.findIndex(
+      (message) => message.sourceMessageId === sourceMessageId,
+    );
+    if (
+      existingIndex >= 0 &&
+      chat.stages.translation.messages[existingIndex + 1]?.status ===
+        MESSAGE_STATUS.complete
+    ) {
+      throw new TranslationConflictError(
+        SERVER_ERROR_MESSAGES.translationComplete,
+      );
+    }
+    this.begin(chatId);
+    return this.translateOnly(chatId, source, signal);
   }
 
   private async *generate(
-    chat: Chat,
+    mode: ChatMode,
+    chatId: string,
     input: MessageInput,
     signal: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
-    const chatId = chat.id;
-    const now = new Date().toISOString();
-    const user: Message = {
-      id: randomUUID(),
-      role: "user",
-      content: input.content,
-      ...(input.attachments.length ? { attachments: input.attachments } : {}),
-      createdAt: now,
-      status: "complete",
-    };
-    const assistant: Message = {
-      id: randomUUID(),
-      role: "assistant",
-      content: "",
-      createdAt: now,
-      status: "complete",
-    };
-
-    yield {
-      type: "start",
-      userMessageId: user.id,
-      assistantMessageId: assistant.id,
-    };
-
     try {
-      for await (const delta of this.completionStreamer(
-        {
-          history: chat.messages,
-          prompt: input.content,
-          attachments: input.attachments,
-          settings: chat.settings,
-        },
+      const generated = yield* this.runStage(
+        chatId,
+        CHAT_STAGE.generation,
+        input.content,
+        input.attachments,
         signal,
-      )) {
-        if (delta.type === "reasoning") {
-          assistant.reasoning = (assistant.reasoning ?? "") + delta.text;
-          yield { type: "reasoning_delta", text: delta.text };
-        } else {
-          assistant.content += delta.text;
-          yield { type: "delta", text: delta.text };
-        }
-      }
-      if (!assistant.content && !assistant.reasoning) {
-        throw new Error(SERVER_ERROR_MESSAGES.emptyLlmResponse);
+      );
+      if (!generated) return;
+      if (mode === CHAT_MODE.standard) {
+        yield { type: STREAM_EVENT.done, chat: generated.chat };
+        return;
       }
 
-      const saved = await this.repository.appendTurn(chatId, user, assistant);
-      if (!saved) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatDeleted);
-      yield { type: "done", chat: saved };
-    } catch (error) {
-      const aborted = signal.aborted;
-      let partialSaved = false;
-      if (assistant.content || assistant.reasoning) {
-        assistant.status = aborted ? "stopped" : "error";
-        try {
-          partialSaved = Boolean(
-            await this.repository.appendTurn(chatId, user, assistant),
-          );
-        } catch {
-          partialSaved = false;
-        }
-      }
-      yield {
-        type: "error",
-        message: aborted ? SERVER_ERROR_MESSAGES.stopped : safeMessage(error),
-        partialSaved,
-      };
+      const translated = yield* this.runStage(
+        chatId,
+        CHAT_STAGE.translation,
+        generated.assistant.content,
+        [],
+        signal,
+        generated.assistant.id,
+      );
+      if (translated) yield { type: STREAM_EVENT.done, chat: translated.chat };
     } finally {
       this.activeChats.delete(chatId);
     }
   }
 
+  private async *translateOnly(
+    chatId: string,
+    source: Message,
+    signal: AbortSignal,
+  ): AsyncGenerator<StreamEvent> {
+    try {
+      const translated = yield* this.runStage(
+        chatId,
+        CHAT_STAGE.translation,
+        source.content,
+        [],
+        signal,
+        source.id,
+      );
+      if (translated) yield { type: STREAM_EVENT.done, chat: translated.chat };
+    } finally {
+      this.activeChats.delete(chatId);
+    }
+  }
+
+  private async *runStage(
+    chatId: string,
+    stageKey: ChatStageKey,
+    prompt: string,
+    attachments: ImageAttachment[],
+    signal: AbortSignal,
+    sourceMessageId?: string,
+  ): AsyncGenerator<StreamEvent, StageResult | null> {
+    const chat = this.getChat(chatId);
+    const stage = this.ensureStage(chat, stageKey);
+    const now = new Date().toISOString();
+    const user: Message = {
+      id: randomUUID(),
+      role: MESSAGE_ROLE.user,
+      content: prompt,
+      ...(sourceMessageId ? { sourceMessageId } : {}),
+      ...(attachments.length ? { attachments } : {}),
+      createdAt: now,
+      status: MESSAGE_STATUS.complete,
+    };
+    const assistant: Message = {
+      id: randomUUID(),
+      role: MESSAGE_ROLE.assistant,
+      content: "",
+      createdAt: now,
+      status: MESSAGE_STATUS.complete,
+    };
+
+    yield {
+      type: STREAM_EVENT.start,
+      stage: stageKey,
+      userMessageId: user.id,
+      assistantMessageId: assistant.id,
+      ...(sourceMessageId ? { sourceMessageId } : {}),
+    };
+
+    try {
+      for await (const delta of this.completionStreamer(
+        {
+          history: historyWithoutSource(stage, sourceMessageId),
+          prompt,
+          attachments,
+          settings: stage.settings,
+        },
+        signal,
+      )) {
+        if (delta.type === COMPLETION_CHUNK_TYPE.reasoning) {
+          assistant.reasoning = (assistant.reasoning ?? "") + delta.text;
+          yield {
+            type: STREAM_EVENT.reasoningDelta,
+            stage: stageKey,
+            text: delta.text,
+          };
+        } else {
+          assistant.content += delta.text;
+          yield { type: STREAM_EVENT.delta, stage: stageKey, text: delta.text };
+        }
+      }
+      if (!assistant.content) {
+        throw new Error(SERVER_ERROR_MESSAGES.emptyLlmResponse);
+      }
+
+      const saved = await this.saveStageTurn(
+        chatId,
+        stageKey,
+        user,
+        assistant,
+        sourceMessageId,
+      );
+      if (!saved) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatDeleted);
+      return { assistant, chat: saved };
+    } catch (error) {
+      const aborted = signal.aborted;
+      if (assistant.content || assistant.reasoning) {
+        assistant.status = aborted
+          ? MESSAGE_STATUS.stopped
+          : MESSAGE_STATUS.error;
+        try {
+          await this.saveStageTurn(
+            chatId,
+            stageKey,
+            user,
+            assistant,
+            sourceMessageId,
+          );
+        } catch {
+          // 오류 응답에는 저장소에서 확인 가능한 마지막 상태를 반환한다.
+        }
+      }
+      yield {
+        type: STREAM_EVENT.error,
+        stage: stageKey,
+        message: aborted ? SERVER_ERROR_MESSAGES.stopped : safeMessage(error),
+        chat: this.getChat(chatId),
+      };
+      return null;
+    }
+  }
+
+  private saveStageTurn(
+    chatId: string,
+    stage: ChatStageKey,
+    user: Message,
+    assistant: Message,
+    sourceMessageId?: string,
+  ) {
+    return stage === CHAT_STAGE.translation && sourceMessageId
+      ? this.repository.upsertTranslationTurn(
+          chatId,
+          sourceMessageId,
+          user,
+          assistant,
+        )
+      : this.repository.appendTurn(chatId, stage, user, assistant);
+  }
+
+  private begin(chatId: string) {
+    if (this.activeChats.has(chatId)) {
+      throw new ChatBusyError(SERVER_ERROR_MESSAGES.busy);
+    }
+    this.activeChats.add(chatId);
+  }
+
   private ensureIdle(chatId: string, message: string) {
     if (this.activeChats.has(chatId)) throw new ChatBusyError(message);
+  }
+
+  private ensureStage(chat: Chat, stage: ChatStageKey): ChatStage {
+    if (stage === CHAT_STAGE.generation) return chat.stages.generation;
+    if (chat.mode === CHAT_MODE.translation) return chat.stages.translation;
+    throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.invalidChatStage);
   }
 
   private ensureUniqueProfileName(name: string, exceptId?: string) {
@@ -243,6 +413,19 @@ export class ChatService {
       throw new ProfileConflictError(SERVER_ERROR_MESSAGES.duplicateProfileName);
     }
   }
+}
+
+function historyWithoutSource(
+  stage: ChatStage,
+  sourceMessageId?: string,
+): Message[] {
+  if (!sourceMessageId) return stage.messages;
+  const index = stage.messages.findIndex(
+    (message) => message.sourceMessageId === sourceMessageId,
+  );
+  return index < 0
+    ? stage.messages
+    : [...stage.messages.slice(0, index), ...stage.messages.slice(index + 2)];
 }
 
 const safeMessage = (error: unknown) =>

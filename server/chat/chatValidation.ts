@@ -1,12 +1,17 @@
 import type {
+  ChatMode,
   ChatParameters,
   ChatSettings,
+  ChatStageKey,
   ImageAttachment,
   MessageInput,
 } from "../../shared/types/chat.ts";
 import {
+  CHAT_MODE,
+  CHAT_STAGE,
   CHAT_LIMITS,
   IMAGE_MIME_TYPES,
+  REASONING_EFFORT,
 } from "../../shared/constants/chat.ts";
 
 const IMAGE_DATA_URL_PATTERN = /^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/;
@@ -15,6 +20,20 @@ export function parsePrompt(value: unknown): string | null {
   return typeof value === "string" &&
     value.trim() &&
     value.length <= CHAT_LIMITS.message
+    ? value
+    : null;
+}
+
+export function parseChatMode(value: unknown): ChatMode | null {
+  return value === undefined || value === CHAT_MODE.standard
+    ? CHAT_MODE.standard
+    : value === CHAT_MODE.translation
+      ? CHAT_MODE.translation
+      : null;
+}
+
+export function parseChatStage(value: unknown): ChatStageKey | null {
+  return value === CHAT_STAGE.generation || value === CHAT_STAGE.translation
     ? value
     : null;
 }
@@ -57,10 +76,7 @@ export function parseChatSettings(value: unknown): ChatSettings | null {
     !inRange(topP, CHAT_LIMITS.topP.min, CHAT_LIMITS.topP.max) ||
     !Number.isInteger(maxTokens) ||
     !inRange(maxTokens, CHAT_LIMITS.maxTokens.min, CHAT_LIMITS.maxTokens.max) ||
-    (reasoningEffort !== "none" &&
-      reasoningEffort !== "low" &&
-      reasoningEffort !== "medium" &&
-      reasoningEffort !== "high")
+    !isReasoningEffort(reasoningEffort)
   ) {
     return null;
   }
@@ -89,10 +105,7 @@ export function parseChatParameters(value: unknown): ChatParameters | null {
     !inRange(topP, CHAT_LIMITS.topP.min, CHAT_LIMITS.topP.max) ||
     !Number.isInteger(maxTokens) ||
     !inRange(maxTokens, CHAT_LIMITS.maxTokens.min, CHAT_LIMITS.maxTokens.max) ||
-    (reasoningEffort !== "none" &&
-      reasoningEffort !== "low" &&
-      reasoningEffort !== "medium" &&
-      reasoningEffort !== "high")
+    !isReasoningEffort(reasoningEffort)
   ) {
     return null;
   }
@@ -168,6 +181,10 @@ function parseImageAttachment(value: unknown): ImageAttachment | null {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
+const isReasoningEffort = (
+  value: unknown,
+): value is ChatSettings["reasoningEffort"] =>
+  Object.values(REASONING_EFFORT).some((effort) => effort === value);
 const inRange = (value: unknown, min: number, max: number): value is number =>
   typeof value === "number" &&
   Number.isFinite(value) &&

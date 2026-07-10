@@ -1,6 +1,11 @@
 import type { ChatSummary } from "../../../../shared/types/chat.ts";
-import { UI_LOCALE, UI_SYMBOLS, UI_TEXT } from "../../../constants/ui.ts";
-import { formatDeleteChatLabel } from "../../../utils/formatUiText.ts";
+import { CHAT_MODE } from "../../../../shared/constants/chat.ts";
+import {
+  UI_LOCALE,
+  UI_SYMBOLS,
+  UI_TEXT,
+  UI_TEXT_FORMATTERS,
+} from "../../../constants/ui.ts";
 
 type Props = {
   chats: ChatSummary[];
@@ -59,6 +64,11 @@ export function ChatSidebar({
               disabled={busy}
             >
               <span>{item.title}</span>
+              {item.mode === CHAT_MODE.translation && (
+                <span className="chat-mode-badge">
+                  {UI_TEXT.sidebar.translationBadge}
+                </span>
+              )}
               <small>
                 {new Date(item.updatedAt).toLocaleString(UI_LOCALE)}
               </small>
@@ -68,7 +78,7 @@ export function ChatSidebar({
               className="delete-button"
               onClick={() => confirmDelete(item)}
               disabled={busy}
-              aria-label={formatDeleteChatLabel(item.title)}
+              aria-label={UI_TEXT_FORMATTERS.deleteChatLabel(item.title)}
             >
               {UI_SYMBOLS.close}
             </button>

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChatHeader } from "../features/chat/components/ChatHeader.tsx";
 import { ChatSidebar } from "../features/chat/components/ChatSidebar.tsx";
+import { ChatTypeDialog } from "../features/chat/components/ChatTypeDialog.tsx";
 import { MessageComposer } from "../features/chat/components/MessageComposer.tsx";
 import { MessageList } from "../features/chat/components/MessageList.tsx";
 import { ProfileSettingsDialog } from "../features/chat/components/ProfileSettingsDialog.tsx";
@@ -13,6 +14,11 @@ import "../features/chat/styles/settings.css";
 export default function App() {
   const controller = useChatController();
   const [profilesOpen, setProfilesOpen] = useState(false);
+  const [chatTypeOpen, setChatTypeOpen] = useState(false);
+
+  useEffect(() => {
+    if (controller.initialized && !controller.chat) setChatTypeOpen(true);
+  }, [controller.initialized, controller.chat]);
 
   return (
     <>
@@ -32,7 +38,10 @@ export default function App() {
           currentChatId={controller.chat?.id}
           busy={controller.busy}
           profilesReady={controller.profileCatalog.profiles.length > 0}
-          onAdd={controller.addChat}
+          onAdd={() => {
+            controller.setSidebarOpen(false);
+            setChatTypeOpen(true);
+          }}
           onOpen={controller.openChat}
           onDelete={controller.removeChat}
           onOpenProfiles={() => {
@@ -73,8 +82,14 @@ export default function App() {
           <MessageList
             chat={controller.chat}
             busy={controller.busy}
+            activeStage={controller.activeStage}
+            activeMessageId={controller.activeMessageId}
+            activeSourceMessageId={controller.activeSourceMessageId}
             onEdit={controller.editPrompt}
             onDelete={controller.removePrompt}
+            onRetryTranslation={(sourceMessageId) =>
+              void controller.retryTranslation(sourceMessageId)
+            }
           />
           <MessageComposer
             draft={controller.draft}
@@ -98,6 +113,13 @@ export default function App() {
           onCreate={controller.addProfile}
           onUpdate={controller.editProfile}
           onDelete={controller.removeProfile}
+        />
+      )}
+      {chatTypeOpen && (
+        <ChatTypeDialog
+          busy={controller.busy}
+          onClose={() => setChatTypeOpen(false)}
+          onCreate={controller.addChat}
         />
       )}
     </>

@@ -1,7 +1,8 @@
 import type {
   Chat,
-  ChatParameters,
+  ChatMode,
   ChatSettings,
+  ChatStageKey,
   ChatSummary,
   ImageAttachment,
   ParameterProfile,
@@ -9,19 +10,13 @@ import type {
   StreamEvent,
 } from "../../../shared/types/chat.ts";
 import {
+  API_PATHS,
   HTTP_METHODS,
   HTTP_STATUS,
   JSON_HEADERS,
   SSE,
 } from "../../../shared/constants/http.ts";
-import { UI_TEXT } from "../../constants/ui.ts";
-import { formatRequestFailedMessage } from "../../utils/formatUiText.ts";
-
-const API_PATHS = {
-  chats: "/api/chats",
-  models: "/api/models",
-  profiles: "/api/profiles",
-} as const;
+import { UI_TEXT, UI_TEXT_FORMATTERS } from "../../constants/ui.ts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -30,7 +25,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       error?: string;
     } | null;
     throw new Error(
-      body?.error || formatRequestFailedMessage(response.status),
+      body?.error || UI_TEXT_FORMATTERS.requestFailed(response.status),
     );
   }
   return (
@@ -44,8 +39,12 @@ export const listChats = () => request<ChatSummary[]>(API_PATHS.chats);
 
 export const listModels = () => request<string[]>(API_PATHS.models);
 
-export const createChat = () =>
-  request<Chat>(API_PATHS.chats, { method: HTTP_METHODS.create });
+export const createChat = (mode: ChatMode) =>
+  request<Chat>(API_PATHS.chats, {
+    method: HTTP_METHODS.create,
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ mode }),
+  });
 
 export const getChat = (id: string) =>
   request<Chat>(`${API_PATHS.chats}/${id}`);
@@ -76,21 +75,26 @@ export const deleteProfile = (id: string) =>
     method: HTTP_METHODS.delete,
   });
 
-export const selectProfile = (chatId: string, profileId: string) =>
-  request<Chat>(`${API_PATHS.chats}/${chatId}/profile`, {
+export const selectProfile = (
+  chatId: string,
+  stage: ChatStageKey,
+  profileId: string,
+) =>
+  request<Chat>(`${API_PATHS.chats}/${chatId}/stages/${stage}/profile`, {
     method: HTTP_METHODS.replace,
     headers: JSON_HEADERS,
     body: JSON.stringify({ profileId }),
   });
 
-export const updateChatParameters = (
+export const updateChatSettings = (
   chatId: string,
-  parameters: ChatParameters,
+  stage: ChatStageKey,
+  settings: ChatSettings,
 ) =>
-  request<Chat>(`${API_PATHS.chats}/${chatId}/settings`, {
+  request<Chat>(`${API_PATHS.chats}/${chatId}/stages/${stage}/settings`, {
     method: HTTP_METHODS.update,
     headers: JSON_HEADERS,
-    body: JSON.stringify(parameters),
+    body: JSON.stringify(settings),
   });
 
 export const deleteChat = (id: string) =>
@@ -121,10 +125,39 @@ export async function streamMessage(
   signal: AbortSignal,
   onEvent: (event: StreamEvent) => void,
 ) {
-  const response = await fetch(`${API_PATHS.chats}/${id}/messages`, {
+  return stream(
+    `${API_PATHS.chats}/${id}/messages`,
+    { content, attachments },
+    signal,
+    onEvent,
+  );
+}
+
+export async function retryTranslation(
+  chatId: string,
+  sourceMessageId: string,
+  signal: AbortSignal,
+  onEvent: (event: StreamEvent) => void,
+) {
+  return stream(
+    `${API_PATHS.chats}/${chatId}/messages/${sourceMessageId}/translation`,
+    undefined,
+    signal,
+    onEvent,
+  );
+}
+
+async function stream(
+  path: string,
+  body: unknown,
+  signal: AbortSignal,
+  onEvent: (event: StreamEvent) => void,
+) {
+  const response = await fetch(path, {
     method: HTTP_METHODS.create,
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ content, attachments }),
+    ...(body === undefined
+      ? {}
+      : { headers: JSON_HEADERS, body: JSON.stringify(body) }),
     signal,
   });
   if (!response.ok) {
@@ -132,7 +165,7 @@ export async function streamMessage(
       error?: string;
     } | null;
     throw new Error(
-      body?.error || formatRequestFailedMessage(response.status),
+      body?.error || UI_TEXT_FORMATTERS.requestFailed(response.status),
     );
   }
   if (!response.body) throw new Error(UI_TEXT.errors.streamBody);

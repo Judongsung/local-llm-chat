@@ -91,6 +91,15 @@
   white-space: nowrap;
 }
 
+.chat-link .chat-mode-badge {
+  width: auto;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 0.68rem;
+}
+
 .chat-link small {
   color: var(--muted);
   font-size: 0.7rem;
@@ -114,7 +123,7 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: hidden;
-  background: #101217;
+  background: var(--app-background);
 }
 
 .chat-header {
@@ -126,7 +135,7 @@
   gap: 1rem;
   padding: 0.8rem 1.25rem;
   border-bottom: 1px solid var(--line);
-  background: rgba(23, 26, 33, 0.96);
+  background: var(--header-background);
 }
 
 .chat-title {
@@ -138,11 +147,7 @@
 
 @media (prefers-color-scheme: light) {
   .chat-panel {
-    background: #f7f8fb;
-  }
-
-  .chat-header {
-    background: rgba(255, 255, 255, 0.96);
+    background: var(--app-background);
   }
 }
 
