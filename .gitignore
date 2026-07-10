@@ -4,6 +4,8 @@ dist/
 llm-models.json
 data/
 *.tmp
+.dev-server.log
+.dev-server.err.log
 
 .agents/
 AGENTS.md

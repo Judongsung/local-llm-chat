@@ -1,5 +1,0 @@
-
-> local-llm-chat@0.1.0 dev
-> node --env-file-if-exists=.env server/index.ts --dev
-
-Local LLM Chat: http://0.0.0.0:3000
