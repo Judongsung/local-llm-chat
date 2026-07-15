@@ -12,10 +12,11 @@ import type {
   CompletionStreamer,
 } from "../llm/completionStreamer.ts";
 import { JsonChatRepository } from "./persistence/JsonChatRepository.ts";
+import { ChatService } from "./chatService.ts";
 import {
-  ChatService,
-  TranslationConflictError,
-} from "./chatService.ts";
+  APPLICATION_ERROR_KIND,
+  ApplicationError,
+} from "../errors/applicationError.ts";
 
 const defaults: ChatSettings = {
   model: "test-model",
@@ -88,7 +89,9 @@ test("번역 실패 후 영문을 보존하고 번역만 교체해 재시도한�
           englishId,
           new AbortController().signal,
         ),
-      TranslationConflictError,
+      (error: unknown) =>
+        error instanceof ApplicationError &&
+        error.kind === APPLICATION_ERROR_KIND.conflict,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

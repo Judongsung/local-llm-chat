@@ -8,11 +8,10 @@ import { ChatService } from "./chat/chatService.ts";
 import { JsonChatRepository } from "./chat/persistence/JsonChatRepository.ts";
 import { loadConfig } from "./loadServerConfig.ts";
 import { createApi } from "./http/createApp.ts";
+import { GalleryService } from "./gallery/galleryService.ts";
 import { createOpenAiCompletionStreamer } from "./llm/openAiCompletionStreamer.ts";
-import {
-  SERVER_STARTUP_MESSAGES,
-  SERVER_STATIC_OPTIONS,
-} from "../shared/constants/server.ts";
+import { SERVER_STATIC_OPTIONS } from "../shared/constants/server.ts";
+import { SERVER_STARTUP_MESSAGES } from "../shared/constants/serverText.ko.ts";
 
 const PARENT_DIRECTORY = "..";
 const DEVELOPMENT_FLAG = "--dev";
@@ -32,9 +31,11 @@ const repository = new JsonChatRepository(
 await repository.load();
 const completionStreamer = createOpenAiCompletionStreamer(config.models);
 const service = new ChatService(repository, completionStreamer);
+const galleryService = new GalleryService(config.galleryRoot);
 const app = createApi(
   service,
   config.models.map(({ model }) => model),
+  galleryService,
 );
 const server = createHttpServer(app);
 const development = process.argv.includes(DEVELOPMENT_FLAG);

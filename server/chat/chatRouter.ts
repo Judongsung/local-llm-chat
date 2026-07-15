@@ -6,7 +6,7 @@ import {
   HTTP_STATUS,
   SSE,
 } from "../../shared/constants/http.ts";
-import { SERVER_ERROR_MESSAGES } from "../../shared/constants/server.ts";
+import { SERVER_ERROR_MESSAGES } from "../../shared/constants/serverText.ko.ts";
 import { ChatService } from "./chatService.ts";
 import {
   parseChatMode,

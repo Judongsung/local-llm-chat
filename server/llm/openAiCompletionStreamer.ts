@@ -10,7 +10,7 @@ import {
   JSON_HEADERS,
   SSE,
 } from "../../shared/constants/http.ts";
-import { SERVER_ERROR_MESSAGES } from "../../shared/constants/server.ts";
+import { SERVER_ERROR_MESSAGES } from "../../shared/constants/serverText.ko.ts";
 import { REASONING_EFFORT } from "../../shared/constants/chat.ts";
 import type {
   ImageAttachment,

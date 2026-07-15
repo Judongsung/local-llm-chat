@@ -6,11 +6,11 @@ import type {
   ProfileCatalog,
 } from "../../../../shared/types/chat.ts";
 import { CHAT_LIMITS } from "../../../../shared/constants/chat.ts";
+import { UI_SYMBOLS } from "../../../constants/ui.ts";
 import {
-  UI_SYMBOLS,
   UI_TEXT,
   UI_TEXT_FORMATTERS,
-} from "../../../constants/ui.ts";
+} from "../../../constants/uiText.ko.ts";
 import { ParameterFields } from "./ParameterFields.tsx";
 
 const SYSTEM_PROMPT_ROWS = 6;

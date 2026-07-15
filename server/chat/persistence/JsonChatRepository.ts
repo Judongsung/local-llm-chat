@@ -25,17 +25,17 @@ import {
   CHAT_SETTING_KEYS,
   CHAT_STAGE,
   CHAT_LIMITS,
-  DEFAULT_CHAT_TITLE,
-  DEFAULT_GENERATION_SYSTEM_PROMPT,
-  DEFAULT_PROFILE_NAME,
-  DEFAULT_TRANSLATION_SYSTEM_PROMPT,
   MESSAGE_ROLE,
   STORE_VERSION,
 } from "../../../shared/constants/chat.ts";
 import {
-  SERVER_ERROR_MESSAGES,
-  SERVER_FILE_ENCODING,
-} from "../../../shared/constants/server.ts";
+  DEFAULT_CHAT_TITLE,
+  DEFAULT_GENERATION_SYSTEM_PROMPT,
+  DEFAULT_PROFILE_NAME,
+  DEFAULT_TRANSLATION_SYSTEM_PROMPT,
+} from "../../../shared/constants/chatText.ko.ts";
+import { SERVER_FILE_ENCODING } from "../../../shared/constants/server.ts";
+import { SERVER_ERROR_MESSAGES } from "../../../shared/constants/serverText.ko.ts";
 import type { ChatRepository } from "../chatRepository.ts";
 import {
   parseChatFile,

@@ -9,14 +9,14 @@ import {
   CHAT_STAGE,
   MESSAGE_ROLE,
   MESSAGE_STATUS,
-} from "../../../../shared/constants/chat.ts";
+} from "../../../shared/constants/chat.ts";
 import type {
   Chat,
   ChatStageKey,
   ImageAttachment,
   Message,
-} from "../../../../shared/types/chat.ts";
-import { UI_TEXT } from "../../../constants/ui.ts";
+} from "../../../shared/types/chat.ts";
+import { UI_TEXT } from "../../constants/uiText.ko.ts";
 
 type Props = {
   chat: Chat | null;

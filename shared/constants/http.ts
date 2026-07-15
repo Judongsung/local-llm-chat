@@ -8,6 +8,8 @@ export const HTTP_METHODS = {
 export const API_ROOT = "/api";
 export const API_PATHS = {
   chats: `${API_ROOT}/chats`,
+  gallery: `${API_ROOT}/gallery`,
+  galleryStatus: `${API_ROOT}/gallery/status`,
   models: `${API_ROOT}/models`,
   profiles: `${API_ROOT}/profiles`,
 } as const;

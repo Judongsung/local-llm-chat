@@ -10,7 +10,7 @@ import type {
   Chat,
   ChatStage,
   StandardChat,
-} from "../../../../shared/types/chat.ts";
+} from "../../../shared/types/chat.ts";
 import { MessageList } from "./MessageList.tsx";
 
 afterEach(() => {

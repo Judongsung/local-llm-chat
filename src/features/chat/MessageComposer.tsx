@@ -3,9 +3,9 @@ import {
   CHAT_LIMITS,
   IMAGE_MIME_TYPES,
   NORMALIZED_IMAGE_MIME_TYPE,
-} from "../../../../shared/constants/chat.ts";
-import type { ImageAttachment } from "../../../../shared/types/chat.ts";
-import { UI_TEXT } from "../../../constants/ui.ts";
+} from "../../../shared/constants/chat.ts";
+import type { ImageAttachment } from "../../../shared/types/chat.ts";
+import { UI_TEXT } from "../../constants/uiText.ko.ts";
 
 const OUTPUT_IMAGE_TYPE = NORMALIZED_IMAGE_MIME_TYPE;
 const OUTPUT_IMAGE_EXTENSION = ".jpg";

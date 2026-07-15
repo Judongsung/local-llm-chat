@@ -13,7 +13,7 @@ import test from "node:test";
 import {
   DEFAULT_GENERATION_SYSTEM_PROMPT,
   DEFAULT_TRANSLATION_SYSTEM_PROMPT,
-} from "../../../shared/constants/chat.ts";
+} from "../../../shared/constants/chatText.ko.ts";
 import type { ChatSettings, Message } from "../../../shared/types/chat.ts";
 import { JsonChatRepository } from "./JsonChatRepository.ts";
 

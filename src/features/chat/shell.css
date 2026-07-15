@@ -1,7 +1,7 @@
 .app-shell {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
   height: 100dvh;
+  grid-template-columns: 280px minmax(0, 1fr);
 }
 
 .menu-button,
@@ -59,6 +59,23 @@
   border-color: var(--line);
   color: inherit;
   background: transparent;
+}
+
+.sidebar-view-link {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.6rem 0.6rem 0;
+  color: inherit;
+  border-color: var(--line);
+  background: transparent;
+  text-align: left;
+}
+
+.sidebar-view-link.active {
+  border-color: var(--accent);
+  background: var(--panel-strong);
 }
 
 .chat-row {
@@ -192,8 +209,8 @@
   .menu-button,
   .sidebar-close {
     display: inline-grid;
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
     place-items: center;
     padding: 0.35rem;
   }
@@ -212,6 +229,11 @@
 
   .chat-list {
     min-height: 0;
+  }
+
+  .sidebar-heading {
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-left: max(1rem, env(safe-area-inset-left));
   }
 
   .chat-panel {

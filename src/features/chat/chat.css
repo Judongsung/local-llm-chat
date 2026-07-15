@@ -1,8 +1,8 @@
 .error-banner {
   display: flex;
+  gap: 1rem;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
   padding: 0.65rem 1.25rem;
   color: var(--error-text);
   background: var(--error-background);

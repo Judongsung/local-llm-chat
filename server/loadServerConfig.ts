@@ -1,17 +1,17 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import type { ChatSettings } from "../shared/types/chat.ts";
 import {
   CHAT_LIMITS,
   DEFAULT_REASONING_EFFORT,
 } from "../shared/constants/chat.ts";
 import {
-  SERVER_CONFIG_ERROR_MESSAGES,
   SERVER_ENVIRONMENT_KEYS,
   SERVER_FILE_ENCODING,
   SERVER_NETWORK_DEFAULTS,
   SERVER_PATHS,
 } from "../shared/constants/server.ts";
+import { SERVER_CONFIG_ERROR_MESSAGES } from "../shared/constants/serverText.ko.ts";
 import type { LlmModelConfig } from "../shared/types/llm.ts";
 
 const SUPPORTED_URL_PROTOCOLS = new Set(["http:", "https:"]);
@@ -20,6 +20,7 @@ type ServerConfig = {
   host: string;
   port: number;
   dataDirectory: string;
+  galleryRoot: string | null;
   models: LlmModelConfig[];
   defaultSettings: ChatSettings;
 };
@@ -47,6 +48,7 @@ export function loadConfig(
       SERVER_NETWORK_DEFAULTS.host,
     port,
     dataDirectory: join(root, SERVER_PATHS.dataDirectory),
+    galleryRoot: loadGalleryRoot(environment[SERVER_ENVIRONMENT_KEYS.galleryRoot]),
     models,
     defaultSettings: {
       model: models[0].model,
@@ -57,6 +59,17 @@ export function loadConfig(
       reasoningEffort: DEFAULT_REASONING_EFFORT,
     },
   };
+}
+
+function loadGalleryRoot(value: string | undefined) {
+  const path = value?.trim();
+  if (!path) return null;
+  try {
+    if (!isAbsolute(path) || !statSync(path).isDirectory()) throw new Error();
+    return realpathSync(path);
+  } catch {
+    throw new Error(SERVER_CONFIG_ERROR_MESSAGES.invalidGalleryRoot);
+  }
 }
 
 function loadModels(filePath: string): LlmModelConfig[] {

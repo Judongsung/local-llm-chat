@@ -3,7 +3,7 @@ import type {
   ChatSettings,
 } from "../../../../shared/types/chat.ts";
 import { CHAT_LIMITS } from "../../../../shared/constants/chat.ts";
-import { UI_TEXT } from "../../../constants/ui.ts";
+import { UI_TEXT } from "../../../constants/uiText.ko.ts";
 
 type Props = {
   settings: ChatSettings;

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
-import type { ChatMode } from "../../../../shared/types/chat.ts";
-import { CHAT_MODE } from "../../../../shared/constants/chat.ts";
-import { UI_SYMBOLS, UI_TEXT } from "../../../constants/ui.ts";
+import type { ChatMode } from "../../../shared/types/chat.ts";
+import { CHAT_MODE } from "../../../shared/constants/chat.ts";
+import { UI_SYMBOLS } from "../../constants/ui.ts";
+import { UI_TEXT } from "../../constants/uiText.ko.ts";
 
 type Props = {
   busy: boolean;

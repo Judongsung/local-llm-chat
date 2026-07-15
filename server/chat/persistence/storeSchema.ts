@@ -19,7 +19,7 @@ import {
   REASONING_EFFORT,
   STORE_VERSION,
 } from "../../../shared/constants/chat.ts";
-import { SERVER_ERROR_MESSAGES } from "../../../shared/constants/server.ts";
+import { SERVER_ERROR_MESSAGES } from "../../../shared/constants/serverText.ko.ts";
 
 const LEGACY_STORE_VERSION = 1;
 

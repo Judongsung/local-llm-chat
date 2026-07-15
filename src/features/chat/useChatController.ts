@@ -40,7 +40,7 @@ import {
   updateAssistantMessage,
   updateStage,
 } from "./chatState.ts";
-import { UI_TEXT } from "../../constants/ui.ts";
+import { UI_TEXT } from "../../constants/uiText.ko.ts";
 
 type StreamProgress = {
   userId: string;

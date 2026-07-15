@@ -20,17 +20,13 @@ import {
   MESSAGE_STATUS,
   STREAM_EVENT,
 } from "../../shared/constants/chat.ts";
-import { SERVER_ERROR_MESSAGES } from "../../shared/constants/server.ts";
+import { SERVER_ERROR_MESSAGES } from "../../shared/constants/serverText.ko.ts";
+import { applicationError } from "../errors/applicationError.ts";
 import {
   COMPLETION_CHUNK_TYPE,
   type CompletionStreamer,
 } from "../llm/completionStreamer.ts";
 import type { ChatRepository } from "./chatRepository.ts";
-
-export class ChatNotFoundError extends Error {}
-export class ChatBusyError extends Error {}
-export class ProfileConflictError extends Error {}
-export class TranslationConflictError extends Error {}
 
 type StageResult = { assistant: Message; chat: Chat };
 
@@ -57,7 +53,9 @@ export class ChatService {
 
   getChat(id: string): Chat {
     const chat = this.repository.get(id);
-    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
+    if (!chat) {
+      throw applicationError.notFound(SERVER_ERROR_MESSAGES.chatNotFound);
+    }
     return chat;
   }
 
@@ -81,7 +79,7 @@ export class ChatService {
     this.ensureUniqueProfileName(name, id);
     const profile = await this.repository.updateProfile(id, name, settings);
     if (!profile) {
-      throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.profileNotFound);
+      throw applicationError.notFound(SERVER_ERROR_MESSAGES.profileNotFound);
     }
     return profile;
   }
@@ -89,10 +87,10 @@ export class ChatService {
   async deleteProfile(id: string): Promise<void> {
     const catalog = this.repository.listProfiles();
     if (!catalog.profiles.some((profile) => profile.id === id)) {
-      throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.profileNotFound);
+      throw applicationError.notFound(SERVER_ERROR_MESSAGES.profileNotFound);
     }
     if (catalog.profiles.length === 1) {
-      throw new ProfileConflictError(SERVER_ERROR_MESSAGES.lastProfile);
+      throw applicationError.conflict(SERVER_ERROR_MESSAGES.lastProfile);
     }
     await this.repository.deleteProfile(id);
   }
@@ -109,10 +107,12 @@ export class ChatService {
         .listProfiles()
         .profiles.some((profile) => profile.id === profileId)
     ) {
-      throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.profileNotFound);
+      throw applicationError.notFound(SERVER_ERROR_MESSAGES.profileNotFound);
     }
     const chat = await this.repository.selectProfile(chatId, stage, profileId);
-    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
+    if (!chat) {
+      throw applicationError.notFound(SERVER_ERROR_MESSAGES.chatNotFound);
+    }
     return chat;
   }
 
@@ -128,16 +128,18 @@ export class ChatService {
       stage,
       settings,
     );
-    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
+    if (!chat) {
+      throw applicationError.notFound(SERVER_ERROR_MESSAGES.chatNotFound);
+    }
     return chat;
   }
 
   async deleteChat(id: string): Promise<void> {
     if (this.activeChats.has(id)) {
-      throw new ChatBusyError(SERVER_ERROR_MESSAGES.busyDelete);
+      throw applicationError.conflict(SERVER_ERROR_MESSAGES.busyDelete);
     }
     if (!(await this.repository.delete(id))) {
-      throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatNotFound);
+      throw applicationError.notFound(SERVER_ERROR_MESSAGES.chatNotFound);
     }
   }
 
@@ -152,14 +154,18 @@ export class ChatService {
       messageId,
       content,
     );
-    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.messageNotFound);
+    if (!chat) {
+      throw applicationError.notFound(SERVER_ERROR_MESSAGES.messageNotFound);
+    }
     return chat;
   }
 
   async deleteTurn(chatId: string, messageId: string): Promise<Chat> {
     this.ensureIdle(chatId, SERVER_ERROR_MESSAGES.busyDelete);
     const chat = await this.repository.deleteTurn(chatId, messageId);
-    if (!chat) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.messageNotFound);
+    if (!chat) {
+      throw applicationError.notFound(SERVER_ERROR_MESSAGES.messageNotFound);
+    }
     return chat;
   }
 
@@ -180,7 +186,7 @@ export class ChatService {
   ): AsyncGenerator<StreamEvent> {
     const chat = this.getChat(chatId);
     if (chat.mode !== CHAT_MODE.translation) {
-      throw new ChatNotFoundError(
+      throw applicationError.notFound(
         SERVER_ERROR_MESSAGES.translationNotAvailable,
       );
     }
@@ -192,7 +198,7 @@ export class ChatService {
         Boolean(message.content),
     );
     if (!source) {
-      throw new ChatNotFoundError(
+      throw applicationError.notFound(
         SERVER_ERROR_MESSAGES.translationNotAvailable,
       );
     }
@@ -204,7 +210,7 @@ export class ChatService {
       chat.stages.translation.messages[existingIndex + 1]?.status ===
         MESSAGE_STATUS.complete
     ) {
-      throw new TranslationConflictError(
+      throw applicationError.conflict(
         SERVER_ERROR_MESSAGES.translationComplete,
       );
     }
@@ -335,7 +341,9 @@ export class ChatService {
         assistant,
         sourceMessageId,
       );
-      if (!saved) throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.chatDeleted);
+      if (!saved) {
+        throw applicationError.notFound(SERVER_ERROR_MESSAGES.chatDeleted);
+      }
       return { assistant, chat: saved };
     } catch (error) {
       const aborted = signal.aborted;
@@ -384,19 +392,21 @@ export class ChatService {
 
   private begin(chatId: string) {
     if (this.activeChats.has(chatId)) {
-      throw new ChatBusyError(SERVER_ERROR_MESSAGES.busy);
+      throw applicationError.conflict(SERVER_ERROR_MESSAGES.busy);
     }
     this.activeChats.add(chatId);
   }
 
   private ensureIdle(chatId: string, message: string) {
-    if (this.activeChats.has(chatId)) throw new ChatBusyError(message);
+    if (this.activeChats.has(chatId)) {
+      throw applicationError.conflict(message);
+    }
   }
 
   private ensureStage(chat: Chat, stage: ChatStageKey): ChatStage {
     if (stage === CHAT_STAGE.generation) return chat.stages.generation;
     if (chat.mode === CHAT_MODE.translation) return chat.stages.translation;
-    throw new ChatNotFoundError(SERVER_ERROR_MESSAGES.invalidChatStage);
+    throw applicationError.notFound(SERVER_ERROR_MESSAGES.invalidChatStage);
   }
 
   private ensureUniqueProfileName(name: string, exceptId?: string) {
@@ -410,7 +420,9 @@ export class ChatService {
             profile.name.toLocaleLowerCase() === normalized,
         )
     ) {
-      throw new ProfileConflictError(SERVER_ERROR_MESSAGES.duplicateProfileName);
+      throw applicationError.conflict(
+        SERVER_ERROR_MESSAGES.duplicateProfileName,
+      );
     }
   }
 }

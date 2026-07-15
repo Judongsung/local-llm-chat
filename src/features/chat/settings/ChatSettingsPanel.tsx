@@ -12,7 +12,7 @@ import {
   CHAT_MODE,
   CHAT_STAGE,
 } from "../../../../shared/constants/chat.ts";
-import { UI_TEXT, UI_TEXT_FORMATTERS } from "../../../constants/ui.ts";
+import { UI_TEXT, UI_TEXT_FORMATTERS } from "../../../constants/uiText.ko.ts";
 import { ParameterFields } from "./ParameterFields.tsx";
 
 const SYSTEM_PROMPT_ROWS = 4;

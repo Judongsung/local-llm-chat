@@ -3,9 +3,10 @@ import type {
   ChatSettings,
   ChatStageKey,
   ParameterProfile,
-} from "../../../../shared/types/chat.ts";
-import { UI_SYMBOLS, UI_TEXT } from "../../../constants/ui.ts";
-import { ChatSettingsPanel } from "./ChatSettingsPanel.tsx";
+} from "../../../shared/types/chat.ts";
+import { UI_SYMBOLS } from "../../constants/ui.ts";
+import { UI_TEXT } from "../../constants/uiText.ko.ts";
+import { ChatSettingsPanel } from "./settings/ChatSettingsPanel.tsx";
 
 type Props = {
   chat: Chat | null;
@@ -41,7 +42,7 @@ export function ChatHeader({
           type="button"
           className="menu-button"
           onClick={onOpenSidebar}
-          aria-controls="chat-sidebar"
+          aria-controls="app-sidebar"
           aria-expanded={sidebarOpen}
           aria-label={UI_TEXT.header.openSidebar}
         >

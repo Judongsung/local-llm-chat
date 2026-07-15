@@ -2,7 +2,7 @@ import { useState } from "react";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MessageComposer } from "./MessageComposer.tsx";
-import type { ImageAttachment } from "../../../../shared/types/chat.ts";
+import type { ImageAttachment } from "../../../shared/types/chat.ts";
 
 afterEach(cleanup);
 

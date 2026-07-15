@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
 import test from "node:test";
-import {
-  DEFAULT_TRANSLATION_SYSTEM_PROMPT,
-} from "../../shared/constants/chat.ts";
+import sharp from "sharp";
+import { DEFAULT_TRANSLATION_SYSTEM_PROMPT } from "../../shared/constants/chatText.ko.ts";
 import type { Chat, ChatSettings } from "../../shared/types/chat.ts";
+import type { GalleryPage } from "../../shared/types/gallery.ts";
 import { ChatService } from "../chat/chatService.ts";
 import { JsonChatRepository } from "../chat/persistence/JsonChatRepository.ts";
 import type {
@@ -16,6 +16,7 @@ import type {
   CompletionStreamer,
 } from "../llm/completionStreamer.ts";
 import { createApi } from "./createApp.ts";
+import { GalleryService } from "../gallery/galleryService.ts";
 
 const defaults: ChatSettings = {
   model: "test-model",
@@ -80,6 +81,7 @@ test("API는 일반 채팅과 2단계 번역 채팅을 처리한다", async (con
     body: JSON.stringify({ mode: "unknown" }),
   });
   assert.equal(invalidMode.status, 400);
+  assert.equal((await fetch(`${base}/api/chats/missing-chat`)).status, 404);
 
   const profileResponse = await fetch(`${base}/api/profiles`, {
     method: "POST",
@@ -206,4 +208,66 @@ test("API는 일반 채팅과 2단계 번역 채팅을 처리한다", async (con
   if (afterDelete.mode !== "translation") assert.fail("번역 채팅이 필요합니다.");
   assert.equal(afterDelete.stages.generation.messages.length, 2);
   assert.equal(afterDelete.stages.translation.messages.length, 2);
+});
+
+test("갤러리 목록, 썸네일과 영상 Range 요청을 제공한다", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "llm-chat-gallery-api-"));
+  const dataDirectory = join(directory, "data");
+  const galleryDirectory = join(directory, ".private-gallery");
+  await mkdir(galleryDirectory);
+  await sharp({
+    create: { width: 20, height: 20, channels: 3, background: "#336699" },
+  })
+    .jpeg()
+    .toFile(join(galleryDirectory, "photo.jpg"));
+  await writeFile(join(galleryDirectory, "video.mp4"), "0123456789");
+  const repository = new JsonChatRepository(dataDirectory, defaults);
+  await repository.load();
+  const completionStreamer: CompletionStreamer = async function* () {};
+  const service = new ChatService(repository, completionStreamer);
+  const server = createApi(
+    service,
+    ["test-model"],
+    new GalleryService(galleryDirectory),
+  ).listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  context.after(
+    () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  );
+  context.after(() => rm(directory, { recursive: true, force: true }));
+
+  assert.deepEqual(await (await fetch(`${base}/api/gallery/status`)).json(), {
+    enabled: true,
+  });
+  const page = (await (await fetch(`${base}/api/gallery`)).json()) as GalleryPage;
+  const invalidCursor = await fetch(
+    `${base}/api/gallery?cursor=${encodeURIComponent("not+base64")}`,
+  );
+  assert.equal(invalidCursor.status, 400);
+  const photo = page.items.find(({ kind }) => kind === "image");
+  const video = page.items.find(({ kind }) => kind === "video");
+  assert.ok(photo?.thumbnailUrl);
+  assert.ok(video);
+
+  const original = await fetch(`${base}${photo.mediaUrl}`);
+  assert.equal(original.status, 200);
+  assert.equal(original.headers.get("content-type"), "image/jpeg");
+  assert.ok((await original.arrayBuffer()).byteLength > 0);
+
+  const thumbnail = await fetch(`${base}${photo.thumbnailUrl}`);
+  assert.equal(thumbnail.status, 200);
+  assert.equal(thumbnail.headers.get("content-type"), "image/webp");
+  assert.match(thumbnail.headers.get("cache-control") ?? "", /immutable/);
+
+  const range = await fetch(`${base}${video.mediaUrl}`, {
+    headers: { Range: "bytes=0-3" },
+  });
+  assert.equal(range.status, 206);
+  assert.equal(await range.text(), "0123");
+  assert.equal(range.headers.get("accept-ranges"), "bytes");
 });

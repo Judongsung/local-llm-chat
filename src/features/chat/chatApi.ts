@@ -16,7 +16,7 @@ import {
   JSON_HEADERS,
   SSE,
 } from "../../../shared/constants/http.ts";
-import { UI_TEXT, UI_TEXT_FORMATTERS } from "../../constants/ui.ts";
+import { UI_TEXT, UI_TEXT_FORMATTERS } from "../../constants/uiText.ko.ts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);

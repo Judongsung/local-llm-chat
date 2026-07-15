@@ -5,7 +5,7 @@ import { ParameterFields } from "./ParameterFields.tsx";
 afterEach(cleanup);
 
 describe("ParameterFields", () => {
-  it("설정된 모델만 선택하고 누락된 현재 모델을 표시한다", () => {
+  it("설정된 모델만 선택하며 누락된 현재 모델도 표시한다", () => {
     const onChange = vi.fn();
     const { rerender } = render(
       <ParameterFields
